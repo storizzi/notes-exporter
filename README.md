@@ -1,5 +1,9 @@
 # Apple Notes Export Tool
 
+<figure style="float: right; margin-left: 10px;">
+    <img src="notes-exporter.jpg" alt="Notes Exporter" width="200">
+</figure>
+
 This tool facilitates the export of Apple Notes into various formats including HTML (.html) attachment-embedded, Plain Text, Markdown, PDF, and Word (DOCX) with images / attachments and most formatting left intact.
 
 You can use it either as a basic backup, or as a conversion tool - e.g. the Markdown format could be used in a note-taking tool like Obsidian which uses Markdown as standard.
