@@ -19,6 +19,7 @@ end if
 
 set dateTime to do shell script "date '+%Y-%m-%d_%H-%M-%S'"
 set backupDirectory to envRootDir & "Apple_Notes_Backup_" & dateTime & "/"
+set backupDirectoryFolder to "Apple_Notes_Backup_" & dateTime
 set htmlDirectory to backupDirectory & "html/"
 set textDirectory to backupDirectory & "text/"
 
@@ -26,6 +27,7 @@ set textDirectory to backupDirectory & "text/"
 set totalNotesOutput to 0
 set totalNotesOverall to 0
 set folderStatistics to {}
+set totalNotes to 0
 
 tell application "Notes"
     set theAccounts to every account
@@ -33,12 +35,14 @@ tell application "Notes"
         set accountName to name of anAccount
         set theFolders to every folder of anAccount
         repeat with aFolder in theFolders
+            set currentNoteNumber to 0
             set folderName to name of aFolder
             set combinedFolderName to my makeValidFilename(accountName & "-" & folderName)
             set folderHTMLPath to htmlDirectory & combinedFolderName & "/"
             set folderTextPath to textDirectory & combinedFolderName & "/"
 
             set theNotes to notes of aFolder
+            set totalNotes to count of theNotes
             set folderNoteCount to 0
             set outputNoteCount to 0
             set directoryCreated to false
@@ -50,8 +54,9 @@ tell application "Notes"
                 set folderNoteCount to folderNoteCount + 1
                 set totalNotesOutput to totalNotesOutput + 1
                 set outputNoteCount to outputNoteCount + 1
+                set currentNoteNumber to currentNoteNumber + 1
 
-                log "- Note: " & (name of theNote)
+                log "Note " & currentNoteNumber & " of " & totalNotes & ": " & (name of theNote)
 
                 set noteName to my makeValidFilename(name of theNote)
 
@@ -91,7 +96,7 @@ log "Total Notes Overall: " & totalNotesOverall
 repeat with stat in folderStatistics
     log "Folder: " & (folderName of stat) & ", Total Notes: " & (totalNotes of stat) & ", Notes Output: " & (notesOutput of stat)
 end repeat
-log "Backup Directory: " & backupDirectory
+log "Backup Directory Folder: " & backupDirectoryFolder
 
 -- Subroutine to create a directory if it doesn't exist
 on createDirectory(directoryPath)
