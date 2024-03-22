@@ -1,8 +1,10 @@
--- Reading environment variables for root directory and note limits
+-- Reading environment variables for root directory
 set envRootDir to do shell script "echo $NOTES_EXPORT_ROOT_DIR"
-set envNoteLimit to do shell script "echo $NOTES_EXPORT_NOTE_LIMIT"
-set envNoteLimitPerFolder to do shell script "echo $NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER"
-set envNotePickProbability to do shell script "echo $NOTES_EXPORT_NOTE_PICK_PROBABILITY"
+
+if envRootDir is equal to "" then
+    set envRootDir to (do shell script "pwd")
+    set envRootDir to envRootDir & "/"
+end if
 
 -- Convert envRootDir to an absolute path if necessary - avoid CFURLGetFSRef was passed a URL which has no scheme warning
 if envRootDir starts with "./" then
@@ -15,26 +17,10 @@ if envRootDir does not end with "/" then
     set envRootDir to envRootDir & "/"
 end if
 
-if envNoteLimit is equal to "" then
-    set noteLimit to -1
-else
-    set noteLimit to envNoteLimit as number
-end if
-
-if envNoteLimitPerFolder is equal to "" then
-    set noteLimitPerFolder to -1
-else
-    set noteLimitPerFolder to envNoteLimitPerFolder as number
-end if
-
-if envNotePickProbability is equal to "" then
-    set notePickProbability to 100
-else
-    set notePickProbability to envNotePickProbability as number
-end if
-
-set htmlDirectory to envRootDir & "html/"
-set textDirectory to envRootDir & "text/"
+set dateTime to do shell script "date '+%Y-%m-%d_%H-%M-%S'"
+set backupDirectory to envRootDir & "Apple_Notes_Backup_" & dateTime & "/"
+set htmlDirectory to backupDirectory & "html/"
+set textDirectory to backupDirectory & "text/"
 
 -- Variables for statistics
 set totalNotesOutput to 0
@@ -61,38 +47,36 @@ tell application "Notes"
 
             repeat with theNote in theNotes
                 set totalNotesOverall to totalNotesOverall + 1
-                if (noteLimit ≠ -1 and totalNotesOutput > noteLimit) or (noteLimitPerFolder ≠ -1 and folderNoteCount ≥ noteLimitPerFolder) then exit repeat
-                -- Random note selection
-                if (random number from 1 to 100) ≤ notePickProbability then
+                set folderNoteCount to folderNoteCount + 1
+                set totalNotesOutput to totalNotesOutput + 1
+                set outputNoteCount to outputNoteCount + 1
 
-                    set folderNoteCount to folderNoteCount + 1
-                    set totalNotesOutput to totalNotesOutput + 1
-                    set outputNoteCount to outputNoteCount + 1
+                log "- Note: " & (name of theNote)
 
-                    log "- Note: " & (name of theNote)
+                set noteName to my makeValidFilename(name of theNote)
 
-                    set noteName to my makeValidFilename(name of theNote)
+                set noteHTMLPath to folderHTMLPath & noteName & ".html"
+                set noteTextPath to folderTextPath & noteName & ".txt"
 
-                    set noteHTMLPath to folderHTMLPath & noteName & ".html"
-                    set noteTextPath to folderTextPath & noteName & ".txt"
-
-                    -- Create directories before writing the first note
-                    if directoryCreated is false then
-                        my createDirectory(folderHTMLPath)
-                        my createDirectory(folderTextPath)
-                        set directoryCreated to true
-                    end if
-
-                    -- Save HTML content
-                    set htmlContent to body of theNote
-
-                    my writeToFile(noteHTMLPath, htmlContent)
-
-                    -- Save text content
-                    set textContent to plaintext of theNote
-                    my writeToFile(noteTextPath, textContent)
-
+                -- Create directories before writing the first note
+                if directoryCreated is false then
+                    my createDirectory(folderHTMLPath)
+                    my createDirectory(folderTextPath)
+                    set directoryCreated to true
                 end if
+
+                set creationDate to creation date of theNote
+
+                -- Save HTML content
+                set htmlContent to body of theNote
+                set htmlContentWithDate to htmlContent & "<!-- Creation Date: " & creationDate & " -->"
+                my writeToFile(noteHTMLPath, htmlContentWithDate)
+
+                -- Save text content
+                set textContent to plaintext of theNote
+                set textContentWithDate to textContent & "Creation Date: " & creationDate
+                my writeToFile(noteTextPath, textContentWithDate)
+
             end repeat
 
             set end of folderStatistics to {folderName:folderName, totalNotes:count of theNotes, notesOutput:outputNoteCount}
@@ -107,6 +91,7 @@ log "Total Notes Overall: " & totalNotesOverall
 repeat with stat in folderStatistics
     log "Folder: " & (folderName of stat) & ", Total Notes: " & (totalNotes of stat) & ", Notes Output: " & (notesOutput of stat)
 end repeat
+log "Backup Directory: " & backupDirectory
 
 -- Subroutine to create a directory if it doesn't exist
 on createDirectory(directoryPath)
@@ -176,4 +161,3 @@ on makeValidFilename(fileName)
 
     return validFileName
 end makeValidFilename
-
