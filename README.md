@@ -2,7 +2,7 @@
 
 This script will backup all Apple Notes to a compressed zip archive that contains both the text and html versions of the notes. 
 
-Simply run the script from the directory where you want the archive to be created. 
+Simply run the script from the directory where you want the archive to be created. The created date of the note will be appended to the file.
 
 Does not support embedded images or attachments, or password protected notes at this stage. 
 
