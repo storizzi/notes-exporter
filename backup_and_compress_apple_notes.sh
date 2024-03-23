@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "Running AppleScript to export notes..."
-backup_directory=$(osascript ./export-notes.scpt)
+backup_directory=$(osascript ./apple-export-notes.scpt)
 
 echo "Extracting backup directory path from the script output..."
 backup_dir=$(echo "$backup_directory" | grep -o 'Backup Directory Folder: .*' | sed 's/Backup Directory Folder: //')
