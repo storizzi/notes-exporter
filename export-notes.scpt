@@ -96,7 +96,7 @@ log "Total Notes Overall: " & totalNotesOverall
 repeat with stat in folderStatistics
     log "Folder: " & (folderName of stat) & ", Total Notes: " & (totalNotes of stat) & ", Notes Output: " & (notesOutput of stat)
 end repeat
-log "Backup Directory Folder: " & backupDirectoryFolder
+return "Backup Directory Folder: " & backupDirectoryFolder
 
 -- Subroutine to create a directory if it doesn't exist
 on createDirectory(directoryPath)
