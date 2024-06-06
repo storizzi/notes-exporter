@@ -1,0 +1,3 @@
+beautifulsoup4==4.12.3
+markdownify==0.12.1
+pypandoc==1.13

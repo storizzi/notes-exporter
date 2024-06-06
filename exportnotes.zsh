@@ -23,6 +23,9 @@ fi
 if [[ -z "${NOTES_EXPORT_EXTRACT_DATA}" ]]; then
     export NOTES_EXPORT_EXTRACT_DATA=true
 fi
+if [[ -z "${NOTES_EXPORT_NOTE_ID_IN_FILENAME}" ]]; then
+    export NOTES_EXPORT_NOTE_ID_IN_FILENAME=false
+fi
 
 # Force image extraction if either Markdown, PDF, or Word conversion is enabled
 if [[ "${NOTES_EXPORT_CONVERT_TO_MARKDOWN}" == "true" || "${NOTES_EXPORT_CONVERT_TO_PDF}" == "true" || "${NOTES_EXPORT_CONVERT_TO_WORD}" == "true" ]]; then
@@ -42,6 +45,7 @@ while [[ $# -gt 0 ]]; do
         --note-limit) export NOTES_EXPORT_NOTE_LIMIT="$2"; shift 2 ;;
         --note-limit-per-folder) export NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER="$2"; shift 2 ;;
         --note-pick-probability) export NOTES_EXPORT_NOTE_PICK_PROBABILITY="$2"; shift 2 ;;
+        --id-in-filename) export NOTES_EXPORT_NOTE_ID_IN_FILENAME="$2"; shift 2 ;;
         --) shift; break ;;
         -*) break ;;
         *) echo "Invalid -- option: $1" >&2; exit 1 ;;
@@ -61,6 +65,7 @@ while getopts "r:s:m:p:i:l:f:b:w:e:" opt; do
     f) export NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER="$OPTARG" ;;
     b) export NOTES_EXPORT_NOTE_PICK_PROBABILITY="$OPTARG" ;;
     e) export NOTES_EXPORT_EXTRACT_DATA="$OPTARG" ;;
+    d) export NOTES_EXPORT_NOTE_ID_IN_FILENAME="$OPTARG" ;;
     \?) echo "Invalid - option: -$OPTARG" >&2; exit 1 ;;
   esac
 done

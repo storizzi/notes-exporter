@@ -3,6 +3,7 @@ set envRootDir to do shell script "echo $NOTES_EXPORT_ROOT_DIR"
 set envNoteLimit to do shell script "echo $NOTES_EXPORT_NOTE_LIMIT"
 set envNoteLimitPerFolder to do shell script "echo $NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER"
 set envNotePickProbability to do shell script "echo $NOTES_EXPORT_NOTE_PICK_PROBABILITY"
+set envNoteIdInFilename to do shell script "echo $NOTES_EXPORT_NOTE_ID_IN_FILENAME"
 
 -- Convert envRootDir to an absolute path if necessary - avoid CFURLGetFSRef was passed a URL which has no scheme warning
 if envRootDir starts with "./" then
@@ -13,6 +14,13 @@ end if
 -- Ensure envRootDir ends with a "/"
 if envRootDir does not end with "/" then
     set envRootDir to envRootDir & "/"
+end if
+
+-- if envNoteIdInFilename is not set, set noteIDInFilename to false, otherwise set to the value of envNoteIdInFilename
+if envNoteIdInFilename is equal to "" then
+    set noteIDInFilename to "false"
+else
+    set noteIDInFilename to envNoteIdInFilename
 end if
 
 if envNoteLimit is equal to "" then
@@ -48,7 +56,7 @@ tell application "Notes"
         set theFolders to every folder of anAccount
         repeat with aFolder in theFolders
             set folderName to name of aFolder
-            set combinedFolderName to my makeValidFilename(accountName & "-" & folderName)
+            set combinedFolderName to my makeValidFilename(accountName & "-" & folderName,"false")
             set folderHTMLPath to htmlDirectory & combinedFolderName & "/"
             set folderTextPath to textDirectory & combinedFolderName & "/"
 
@@ -71,7 +79,7 @@ tell application "Notes"
 
                     log "- Note: " & (name of theNote)
 
-                    set noteName to my makeValidFilename(name of theNote)
+                    set noteName to my makeValidFilename(name of theNote, id of theNote)
 
                     set noteHTMLPath to folderHTMLPath & noteName & ".html"
                     set noteTextPath to folderTextPath & noteName & ".txt"
@@ -136,7 +144,16 @@ on writeToFile(filePath, content)
 end writeToFile
 
 --- Subroutine to generate a valid filename, replace certain characters with dashes, remove non-alphanumeric characters (except dashes), and consolidate multiple dashes
-on makeValidFilename(fileName)
+on makeValidFilename(fileName, noteID)
+    set envNoteIdInFilename to do shell script "echo $NOTES_EXPORT_NOTE_ID_IN_FILENAME"
+
+    -- if envNoteIdInFilename is not set, set noteIDInFilename to false, otherwise set to the value of envNoteIdInFilename
+    if envNoteIdInFilename is equal to "" then
+        set noteIDInFilename to "false"
+    else
+        set noteIDInFilename to envNoteIdInFilename
+    end if
+
     -- Replace slashes, underscores, and spaces with dashes
     set charactersToReplace to {"/", "_", " ", ".", ","}
     repeat with aChar in charactersToReplace
@@ -154,6 +171,15 @@ on makeValidFilename(fileName)
             set validFileName to validFileName & currentChar
         end if
     end repeat
+
+    -- prepend noteID to the filename if noteIdInFilename is set to true and noteID is not false
+    if noteIDInFilename is equal to "true" and noteID is not "false" then
+
+        set noteID to my cleanupId(noteID)
+
+        -- use uuid as the prefix
+        set validFileName to noteID & "_" & validFileName
+    end if
 
     -- Consolidate multiple dashes into a single dash
     set AppleScript's text item delimiters to "--"
@@ -177,3 +203,22 @@ on makeValidFilename(fileName)
     return validFileName
 end makeValidFilename
 
+-- Function to process the input string
+on cleanupId(inputString)
+    -- Components of the string
+    set startingPrefix to "x-coredata://"
+    set middlePart to "/ICNote/"
+
+    -- Remove the starting prefix
+    set textWithoutPrefix to text (length of startingPrefix + 1) through (length of inputString) of inputString
+
+    -- Split the remaining text by the middle part
+    set AppleScript's text item delimiters to middlePart
+    set parts to text items of textWithoutPrefix
+
+    -- Combine the parts into the desired format
+    set result to item 1 of parts & "-" & item 2 of parts
+
+    -- Return the result
+    return result
+end processString
