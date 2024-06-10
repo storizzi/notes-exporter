@@ -135,7 +135,7 @@ exportnotes.zsh
 
 Export notes with default settings in a python conda environment called `notesexport` auto-creating and activating the environment if it doesn't exist, and auto-installing the required pip dependencies - or just activating that environment if it already exists:
 
-``bash
+```bash
 exportnotes.zsh --conda-env notesexport
 ```
 
