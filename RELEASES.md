@@ -2,7 +2,7 @@
 
 Release information follows...
 
-## 9 Jun 2024 - Release 0.2 - Filename format / other file types
+## 10 Jun 2024 - Release 0.2 - Filename format / other file types
 
 * `--filename-format` Format of main part of filename before the filetype for word/pdf/html - default is &title but can contain &title for a santitized version of the title (note this can change), and / or &id for the internal id apple uses for the note to generate a filename with a specific format. Thanks to @cromulus for the suggestion and sample code - I decided rather than to have an ID option to have a more general file format option so if more file format requirements appear, we don't need to have lots of new command line options / environment variables!
 * Similar for `--subdir-format` - the notes folder subdirectory is now optional and can be formatted
