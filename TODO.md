@@ -2,20 +2,19 @@
 
 Some features that might be useful to include in the future in no particular order:
 
+* Ensure non-image files can also be downloaded to attachments
 * Filter to specify specific accounts / notebooks
 * If use short form of parameters should be able to specify parameter without true implicitly
 * Option to NOT overwrite files / warn if going to do so
 * Clear down directory before download (optionally) - or maybe do backups
 * Allow for mailbox and then notebook directory structure
 * Filter to only include files that have been changed after a specific date (e.g. date last run)
-* Option to name files by the note ID given by Apple in case the note name changes
 * Put the .htm files into a different directory to the .html files
 * Include a json file in each notebook that gives note metadata such as created date, original note name etc
 * Use metadata in json file to update documents or work out if a document needs to be updated to allow for quicker processing - possibly even to determine deletes
 * Option to put images at the same level as documents instead of a subdirectory
 * Option to group images at the account level
 * Option to group images at the notebook level
-* Option to mix all the documents into a single directory but use a different filename format to show the account / notebook if wanted.
 * Optionally include timestamp in filenames in case of two notes with the same name
 * Optionally put proper HTML page tags around the pages so they are properly formatted (e.g. with the title as the original note title)
 * Optionally share the files so they are not being duplicated
