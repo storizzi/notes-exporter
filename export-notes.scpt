@@ -199,9 +199,16 @@ on makeValidFilename(fileName)
     end repeat
 
     -- Remove trailing dash if present
-    if validFileName ends with "-" then
-        set validFileName to text 1 through -2 of validFileName
-    end if
+    -- Could just always remove all -
+    -- But will just do that on error
+    try
+        if validFileName ends with "-" then
+            set validFileName to text 1 through -2 of validFileName
+        end if
+    on error errMsg number errNum
+        log "Error removing trailing dash: " & errMsg
+        set validFileName to my replaceText("-", "", validFileName)
+    end try
 
     return validFileName
 end makeValidFilename
