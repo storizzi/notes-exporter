@@ -169,9 +169,16 @@ on makeValidFilename(fileName)
     set cleanedString to ""
     repeat with i from 1 to length of fileName
         set theChar to character i of fileName
-        set theCode to ASCII number of fileName
-        if theCode ≥ 32 and fileName is not in {"/", "\\", ":"} then
-            set cleanedString to cleanedString & theChar
+        set theCode to ASCII number of theChar
+        if theCode ≥ 32 then
+            if theChar is "/" then
+                -- Replace slashes with hyphens
+                set cleanedString to cleanedString & "-"
+            else if theChar is in {":", "\\"} then
+                -- Remove invalid characters
+            else
+                set cleanedString to cleanedString & theChar
+            end if
         end if
     end repeat
     return cleanedString
