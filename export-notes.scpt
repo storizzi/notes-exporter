@@ -166,22 +166,22 @@ end writeToFile
 
 -- Subroutine to generate a valid filename (for MacOS!), remove certain characters, but keeps diacritics and other UTF characters
 on makeValidFilename(fileName)
-    set cleanedString to ""
+    set validFileName to ""
     repeat with i from 1 to length of fileName
         set theChar to character i of fileName
         set theCode to ASCII number of theChar
         if theCode ≥ 32 then
             if theChar is "/" then
                 -- Replace slashes with hyphens
-                set cleanedString to cleanedString & "-"
+                set validFileName to validFileName & "-"
             else if theChar is in {":", "\\"} then
                 -- Remove invalid characters
             else
-                set cleanedString to cleanedString & theChar
+                set validFileName to validFileName & theChar
             end if
         end if
     end repeat
-    return cleanedString
+    return validFileName
 end makeValidFilename
 
 -- Subroutine to generate a filename based on the specified format
