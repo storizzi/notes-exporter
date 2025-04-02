@@ -159,22 +159,9 @@ end createDirectory
 -- Subroutine to write content to a file
 on writeToFile(filePath, content)
     try
-        -- Convert the file path to a file object
-        set fileObject to POSIX file filePath
-        -- Try to open the file for access
-        set fileDescriptor to open for access fileObject with write permission
-        write content to fileDescriptor starting at eof
-        close access fileDescriptor
+        do shell script "echo " & quoted form of content & " > " & quoted form of filePath
     on error errMsg
-        -- Log the error message
-        log "Error writing to file: " & errMsg
-
-        -- If the file does not exist, create it and then open for access
-        close access
-        do shell script "touch " & quoted form of filePath
-        set fileDescriptor to open for access fileObject with write permission
-        write content to fileDescriptor starting at eof
-        close access fileDescriptor
+        log "Error writing to file with shell script: " & errMsg
     end try
 end writeToFile
 
