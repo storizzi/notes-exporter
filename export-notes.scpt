@@ -103,6 +103,12 @@ on run argv
 
                         set noteTitle to my makeValidFilename(name of theNote)
                         set noteID to my extractID(id of theNote)
+                        
+                        set noteCreationDate to creation date of theNote
+                        set noteModificationDate to modification date of theNote
+
+                        set formattedCreationDate to my formatDate(noteCreationDate)
+                        set formattedModificationDate to my formatDate(noteModificationDate)
 
                         -- Generate filename using the specified format
                         set noteName to my generateFilename(envFilenameFormat, noteTitle, noteID, accountName, folderName, accountID, shortAccountID)
@@ -110,15 +116,23 @@ on run argv
                         set noteHTMLPath to POSIX path of (folderHTMLPath & noteName & ".html")
                         set noteTextPath to POSIX path of (folderTextPath & noteName & ".txt")
 
-                        -- Save HTML content
-                        set htmlContent to body of theNote
+                        -- Retrieve the existing body content
+                        set existingBody to body of theNote
+                        
+                        -- Construct the new HTML content with title and date prepended
+                        set htmlContent to  "<meta charset='utf-8'>" & existingBody & "<footer><time>Created on: " & noteCreationDate & "</time><br><time>Last modified on: " & noteModificationDate & "</time></footer>"
 
                         my writeToFile(noteHTMLPath, htmlContent)
+
+                        -- Apply the creation and modification times to the HTML file
+                        do shell script "touch -t " & formattedModificationDate & " " & quoted form of noteHTMLPath
 
                         -- Save text content
                         set textContent to plaintext of theNote
                         my writeToFile(noteTextPath, textContent)
 
+                        -- Apply the creation and modification times using shell commands
+                        do shell script "touch -t " & formattedModificationDate & " " & quoted form of noteTextPath
                     end if
                 end repeat
 
@@ -145,22 +159,9 @@ end createDirectory
 -- Subroutine to write content to a file
 on writeToFile(filePath, content)
     try
-        -- Convert the file path to a file object
-        set fileObject to POSIX file filePath
-        -- Try to open the file for access
-        set fileDescriptor to open for access fileObject with write permission
-        write content to fileDescriptor starting at eof
-        close access fileDescriptor
+        do shell script "echo " & quoted form of content & " > " & quoted form of filePath
     on error errMsg
-        -- Log the error message
-        log "Error writing to file: " & errMsg
-
-        -- If the file does not exist, create it and then open for access
-        close access
-        do shell script "touch " & quoted form of filePath
-        set fileDescriptor to open for access fileObject with write permission
-        write content to fileDescriptor starting at eof
-        close access fileDescriptor
+        log "Error writing to file with shell script: " & errMsg
     end try
 end writeToFile
 
@@ -257,3 +258,14 @@ on extractShortAccountID(accountID)
     set AppleScript's text item delimiters to ""
     return shortAccountID
 end extractShortAccountID
+
+-- Subroutine to format a date as YYYYMMDDhhmm.ss
+on formatDate(theDate)
+    set {year:y, month:m, day:d, hours:h, minutes:min, seconds:s} to theDate
+    set m to text -2 thru -1 of ("0" & (month of theDate as integer))
+    set d to text -2 thru -1 of ("0" & d)
+    set h to text -2 thru -1 of ("0" & h)
+    set min to text -2 thru -1 of ("0" & min)
+    set s to text -2 thru -1 of ("0" & s)
+    return (y & m & d & h & min & "." & s) as text
+end formatDate

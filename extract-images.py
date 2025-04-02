@@ -14,10 +14,10 @@ def extract_and_replace_base64_images(html_folder_path, use_attachments_folder=F
 
         # Read the file, convert to UTF-8 if necessary
         try:
-            with open(html_file, "r", encoding="MacRoman") as file:
+            with open(html_file, "r", encoding="utf-8") as file:
                 html_content = file.read()
         except UnicodeDecodeError:
-            with open(html_file, "r", encoding="utf-8") as file:
+            with open(html_file, "r", encoding="MacRoman") as file:
                 html_content = file.read()
 
         soup = BeautifulSoup(html_content, "html.parser")
