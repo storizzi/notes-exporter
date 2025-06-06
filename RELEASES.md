@@ -1,6 +1,37 @@
-## Releases
+# Releases
 
 Release information follows...
+
+## 6 June 2025 - Release 0.3 - Automated Scheduling & Output Improvements
+
+### New Features
+* **Automated Scheduling System**: Added comprehensive LaunchD scheduling support for macOS
+  * New Python script (`setup_launchd.py`) for creating, managing, and debugging scheduled exports
+  * Automatic wrapper script generation that properly sources shell environment and conda
+  * Support for both daily scheduling (`--hour`, `--minute`) and interval-based scheduling (`--interval`)
+  * Complete job lifecycle management: `--load`, `--unload`, `--test`, `--status`, `--remove`, `--debug`
+  * Automatic permission handling and environment variable setup
+  * Comprehensive logging with separate stdout/stderr streams
+  * Smart job reloading that automatically unloads existing jobs before loading new ones
+
+### Improvements
+* **Better Output Handling**: Modified AppleScript to properly route informational messages to stdout and errors to stderr
+* **Combined Commands**: Support for chaining multiple actions in a single command (e.g., `--hour 22 --minute 15 --load --test`)
+* **Environment File Support**: Added `.env` file support for custom environment variables in scheduled jobs
+* **Enhanced Debugging**: Added comprehensive debugging tools to troubleshoot scheduling and permission issues
+* **Documentation**: Added detailed scheduling section to README.md with setup instructions and troubleshooting
+
+### Bug Fixes
+* Fixed AppleScript filename validation to handle edge case where removing trailing dash could result in empty filename
+* Improved error handling for file write operations in AppleScript
+* Fixed permission issues that could cause "Input/output error" when loading jobs
+* Enhanced environment variable detection and sourcing for scheduled execution
+
+### Technical Details
+* LaunchD integration provides more reliable scheduling than cron for GUI applications
+* Automatic detection of conda installations and proper environment activation
+* Support for multiple scheduling patterns and easy reconfiguration
+* Comprehensive permission setup guide for macOS security requirements
 
 ## 10 Jun 2024 - Release 0.2 - Filename format / other file types
 
