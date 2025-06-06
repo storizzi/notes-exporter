@@ -1,2 +1,5 @@
 .DS_Store
 /AppleNotesExport/
+exportnotes-wrapper.zsh
+.env
+logs/*

@@ -247,3 +247,154 @@ To make the scripts easily accessible, add the script directory to your `PATH` i
    source ~/.zshrc
    ```
    or just start a new Terminal window or tab.
+
+## Scheduling Automatic Exports
+
+You can schedule the notes export to run automatically at regular intervals using macOS's built-in `launchd` system. This is more reliable than using `cron` for AppleScript-based tasks because it runs with full user permissions and GUI access.
+
+## Setup Automatic Scheduling
+
+#### Permissions Setup
+
+**Important**: The first time you run the script (either manually or scheduled), macOS will prompt for permissions to access the Notes app. To avoid repeated popups:
+
+1. **Grant Full Disk Access** to Terminal (or your shell):
+   - System Preferences → Security & Privacy → Privacy → Full Disk Access
+   - Click the lock and enter your password
+   - Click "+" and add Terminal (or iTerm if you use that)
+
+2. **Grant Accessibility permissions** to osascript:
+   - System Preferences → Security & Privacy → Privacy → Accessibility  
+   - Add Terminal and/or osascript if prompted
+
+3. **Allow automation** for the Notes app:
+   - When first prompted, click "OK" to allow Terminal to control Notes
+   - Or go to System Preferences → Security & Privacy → Privacy → Automation
+   - Ensure Terminal is allowed to control Notes
+
+Once these permissions are granted, the scheduled jobs will run without prompts.
+
+### Install the Scheduling Tool
+
+A Python script is provided to easily set up and manage scheduled exports. This script handles all the complexity of creating the necessary configuration files and setting correct permissions.
+
+First, ensure you have Python 3 installed (it should be available if you followed the setup instructions above).
+
+#### Create Scheduled Export
+
+To set up a daily export at 9:00 AM:
+
+```bash
+cd ~/bin/notes-exporter
+python3 setup_launchd.py
+```
+
+Or with custom scheduling options:
+
+```bash
+# Run daily at 2:30 PM
+python3 setup_launchd.py --hour 14 --minute 30
+
+# Run every 60 minutes
+python3 setup_launchd.py --interval 60
+
+# Different script directory
+python3 setup_launchd.py --script-dir /path/to/notes-exporter
+```
+
+This creates:
+- A wrapper script that properly loads your shell environment
+- A launchd configuration file for scheduling
+- A logs directory for monitoring the exports
+- A sample `.env` file for custom environment variables
+
+#### Manage the Scheduled Job
+
+After creating the setup, use these commands to manage your scheduled exports:
+
+```bash
+# Start scheduling (activate the job)
+python3 setup_launchd.py --load
+
+# Test run manually to verify it works
+python3 setup_launchd.py --test
+
+# Check if the job is currently scheduled
+python3 setup_launchd.py --status
+
+# Stop scheduling (but keep files)
+python3 setup_launchd.py --unload
+
+# Remove everything (stop scheduling and delete all setup files)
+python3 setup_launchd.py --remove
+```
+
+#### Environment Variables for Scheduled Jobs
+
+When running as a scheduled job, you may want to set custom environment variables. Edit the `.env` file in your script directory:
+
+```bash
+nano .env
+```
+
+Example `.env` configuration:
+
+```bash
+# Export settings
+export NOTES_EXPORT_ROOT_DIR="$HOME/Documents/NotesBackup"
+export NOTES_EXPORT_CONVERT_TO_MARKDOWN="true"
+export NOTES_EXPORT_EXTRACT_IMAGES="true"
+
+# Conda environment
+export NOTES_EXPORT_CONDA_ENV="notes-export"
+
+# Custom PATH additions (if needed)
+export PATH="/opt/homebrew/bin:$PATH"
+```
+
+#### Monitor Scheduled Exports
+
+View the logs to see if your scheduled exports are working:
+
+```bash
+# View recent output
+tail -f logs/stdout.log
+
+# View any errors
+tail -f logs/stderr.log
+
+# View debug information
+tail -f logs/debug.log
+```
+
+The debug log shows environment information that can help troubleshoot any issues with the scheduled execution.
+
+#### Typical Workflow
+
+1. **Set up**: `python3 setup_launchd.py --hour 9`
+2. **Configure**: Edit `.env` file if needed for custom settings
+3. **Activate**: `python3 setup_launchd.py --load`
+4. **Test**: `python3 setup_launchd.py --test`
+5. **Monitor**: Check logs periodically
+
+#### Troubleshooting Scheduled Jobs
+
+If your scheduled job isn't working:
+
+1. **Check job status**: `python3 setup_launchd.py --status`
+2. **Review logs**: Look at `logs/stderr.log` for errors
+3. **Test manually**: Run `python3 setup_launchd.py --test`
+4. **Check permissions**: The script automatically sets correct permissions, but verify your Notes app has necessary accessibility permissions
+5. **Environment issues**: Check `logs/debug.log` for environment variable problems
+
+**Note**: Scheduled jobs run in a more limited environment than your normal terminal session. The wrapper script sources your shell configuration files and the `.env` file to ensure the necessary environment is available.
+
+#### Remove Scheduling
+
+To completely remove the scheduled export setup:
+
+```bash
+python3 setup_launchd.py --remove
+```
+
+This unloads the job and removes the scheduling files while leaving your main `exportnotes.zsh` script and any exported data intact.
