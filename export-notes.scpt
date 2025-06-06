@@ -199,7 +199,7 @@ on makeValidFilename(fileName)
     end repeat
 
     -- Remove trailing dash if present
-    if validFileName ends with "-" then
+    if (length of validFileName > 1) and (validFileName ends with "-") then
         set validFileName to text 1 through -2 of validFileName
     end if
 
