@@ -168,34 +168,6 @@ def create_env_file(script_dir):
     
     return env_path
 
-def remove_launchd_setup(username, home_dir, script_dir):
-    """Remove the launchd setup (unload and delete files)"""
-    launch_agents_dir = home_dir / "Library" / "LaunchAgents"
-    plist_path = launch_agents_dir / f"com.{username}.notes-exporter.plist"
-    wrapper_path = script_dir / "exportnotes-wrapper.zsh"
-    
-    print(f"Removing launchd setup for user: {username}")
-    
-    # First unload the job if it's loaded
-    unload_job(username, home_dir)
-    
-    # Remove the plist file
-    if plist_path.exists():
-        plist_path.unlink()
-        print(f"✓ Removed plist file: {plist_path}")
-    else:
-        print(f"Plist file not found: {plist_path}")
-    
-    # Remove the wrapper script
-    if wrapper_path.exists():
-        wrapper_path.unlink()
-        print(f"✓ Removed wrapper script: {wrapper_path}")
-    else:
-        print(f"Wrapper script not found: {wrapper_path}")
-    
-    print("✓ LaunchD setup removed successfully!")
-    print("Note: The main exportnotes.zsh script and .env file were left untouched.")
-
 def is_job_loaded(username):
     """Check if the job is currently loaded (returns True/False)"""
     result = os.system(f"launchctl list | grep -q notes-exporter")
@@ -225,10 +197,6 @@ def load_job(username, home_dir):
         return True
     else:
         print(f"✗ Failed to load job (exit code: {result})")
-        print("Common solutions:")
-        print("1. Try unloading first: python3 setup_launchd.py --unload")
-        print("2. Check plist syntax: plutil -lint '{}'".format(plist_path))
-        print("3. Try manual load: launchctl load '{}'".format(plist_path))
         return False
 
 def unload_job(username, home_dir):
@@ -267,6 +235,34 @@ def check_job_status(username):
     else:
         print("✗ Job is not loaded")
         return False
+
+def remove_launchd_setup(username, home_dir, script_dir):
+    """Remove the launchd setup (unload and delete files)"""
+    launch_agents_dir = home_dir / "Library" / "LaunchAgents"
+    plist_path = launch_agents_dir / f"com.{username}.notes-exporter.plist"
+    wrapper_path = script_dir / "exportnotes-wrapper.zsh"
+    
+    print(f"Removing launchd setup for user: {username}")
+    
+    # First unload the job if it's loaded
+    unload_job(username, home_dir)
+    
+    # Remove the plist file
+    if plist_path.exists():
+        plist_path.unlink()
+        print(f"✓ Removed plist file: {plist_path}")
+    else:
+        print(f"Plist file not found: {plist_path}")
+    
+    # Remove the wrapper script
+    if wrapper_path.exists():
+        wrapper_path.unlink()
+        print(f"✓ Removed wrapper script: {wrapper_path}")
+    else:
+        print(f"Wrapper script not found: {wrapper_path}")
+    
+    print("✓ LaunchD setup removed successfully!")
+    print("Note: The main exportnotes.zsh script and .env file were left untouched.")
 
 def debug_plist(username, home_dir, script_dir):
     """Debug the plist file and related paths"""
@@ -343,22 +339,62 @@ def debug_plist(username, home_dir, script_dir):
         print("6. Plist content (first 20 lines):")
         os.system(f"head -20 '{plist_path}'")
 
+def create_setup(username, home_dir, script_dir, hour, minute, interval):
+    """Create the launchd setup files"""
+    print(f"Setting up launchd for user: {username}")
+    print(f"Home directory: {home_dir}")
+    print(f"Script directory: {script_dir}")
+    
+    # Check if exportnotes.zsh exists
+    main_script = script_dir / "exportnotes.zsh"
+    if not main_script.exists():
+        print(f"Warning: {main_script} not found!")
+        print("Make sure you're running this from the correct directory.")
+    else:
+        # Set correct permissions for main script
+        os.chmod(main_script, 0o755)
+        print(f"✓ Set permissions for: {main_script}")
+    
+    # Ensure script directory has correct permissions
+    os.chmod(script_dir, 0o755)
+    
+    # Ensure LaunchAgents directory has correct permissions
+    launch_agents_dir = home_dir / "Library" / "LaunchAgents"
+    if launch_agents_dir.exists():
+        os.chmod(launch_agents_dir, 0o755)
+    
+    # Create wrapper script
+    wrapper_path = create_wrapper_script(script_dir, home_dir)
+    print(f"✓ Created wrapper script: {wrapper_path}")
+    
+    # Create plist file
+    plist_path = create_plist_file(username, home_dir, script_dir, hour, minute, interval)
+    print(f"✓ Created plist file: {plist_path}")
+    
+    # Create sample .env file
+    env_path = create_env_file(script_dir)
+    
+    # Print schedule info
+    if interval:
+        print(f"✓ Scheduled to run every {interval} minutes")
+    else:
+        print(f"✓ Scheduled to run daily at {hour:02d}:{minute:02d}")
+
 def main():
     parser = argparse.ArgumentParser(description='Manage launchd setup for notes export scheduling')
     
-    # Action arguments (mutually exclusive)
-    action_group = parser.add_mutually_exclusive_group()
-    action_group.add_argument('--remove', action='store_true',
+    # Action arguments
+    parser.add_argument('--remove', action='store_true',
                         help='Remove the launchd setup (unload and delete files)')
-    action_group.add_argument('--load', action='store_true',
+    parser.add_argument('--load', action='store_true',
                         help='Load the launchd job (start scheduling)')
-    action_group.add_argument('--unload', action='store_true',
+    parser.add_argument('--unload', action='store_true',
                         help='Unload the launchd job (stop scheduling)')
-    action_group.add_argument('--test', action='store_true',
+    parser.add_argument('--test', action='store_true',
                         help='Run the job manually for testing')
-    action_group.add_argument('--status', action='store_true',
+    parser.add_argument('--status', action='store_true',
                         help='Check if the job is currently loaded')
-    action_group.add_argument('--debug', action='store_true',
+    parser.add_argument('--debug', action='store_true',
                         help='Debug the plist setup and check for issues')
     
     # Configuration arguments
@@ -377,85 +413,39 @@ def main():
     username, home_dir = get_user_info()
     script_dir = Path(args.script_dir).resolve()
     
-    # Handle different actions
+    # STEP 1: If schedule parameters changed from defaults, create/update setup
+    schedule_changed = (args.hour != 9 or args.minute != 0 or args.interval is not None)
+    no_actions = not any([args.remove, args.load, args.unload, args.test, args.status, args.debug])
+    
+    if schedule_changed or no_actions:
+        create_setup(username, home_dir, script_dir, args.hour, args.minute, args.interval)
+        print()
+    
+    # STEP 2: Execute requested actions in order
     if args.remove:
         remove_launchd_setup(username, home_dir, script_dir)
         return
-    elif args.load:
-        if load_job(username, home_dir):
-            check_job_status(username)
-        else:
-            print("\nTroubleshooting steps:")
-            print("1. Check if job already loaded: python3 setup_launchd.py --status")
-            print("2. Unload first: python3 setup_launchd.py --unload")
-            print("3. Recreate setup: python3 setup_launchd.py")
-        return
-    elif args.unload:
+    
+    if args.unload:
         unload_job(username, home_dir)
-        return
-    elif args.test:
+        print()
+    
+    if args.load:
+        success = load_job(username, home_dir)
+        print()
+        if not success:
+            return
+    
+    if args.test:
         test_job(username)
-        return
-    elif args.status:
-        if check_job_status(username):
-            print("✓ Job is currently loaded and scheduled")
-        else:
-            print("✗ Job is not loaded")
-        return
-    elif args.debug:
+        print()
+    
+    if args.status:
+        check_job_status(username)
+        print()
+    
+    if args.debug:
         debug_plist(username, home_dir, script_dir)
-        return
-    
-    print(f"Setting up launchd for user: {username}")
-    print(f"Home directory: {home_dir}")
-    print(f"Script directory: {script_dir}")
-    
-    # Check if exportnotes.zsh exists
-    main_script = script_dir / "exportnotes.zsh"
-    if not main_script.exists():
-        print(f"Warning: {main_script} not found!")
-        print("Make sure you're running this from the correct directory.")
-    else:
-        # Set correct permissions for main script
-        os.chmod(main_script, 0o755)
-        print(f"Set permissions for: {main_script}")
-    
-    # Ensure script directory has correct permissions
-    os.chmod(script_dir, 0o755)
-    
-    # Ensure LaunchAgents directory has correct permissions
-    launch_agents_dir = home_dir / "Library" / "LaunchAgents"
-    if launch_agents_dir.exists():
-        os.chmod(launch_agents_dir, 0o755)
-    
-    # Create wrapper script
-    wrapper_path = create_wrapper_script(script_dir, home_dir)
-    print(f"Created wrapper script: {wrapper_path}")
-    
-    # Create plist file
-    plist_path = create_plist_file(username, home_dir, script_dir, 
-                                   args.hour, args.minute, args.interval)
-    print(f"✓ Created plist file: {plist_path}")
-    
-    # Create sample .env file
-    env_path = create_env_file(script_dir)
-    
-    # Print schedule info
-    if args.interval:
-        print(f"Scheduled to run every {args.interval} minutes")
-    else:
-        print(f"Scheduled to run daily at {args.hour:02d}:{args.minute:02d}")
-    
-    print("Setup complete! Use these commands to manage your scheduled job:")
-    print(f"  python3 {Path(__file__).name} --load     # Start scheduling")
-    print(f"  python3 {Path(__file__).name} --test     # Test run manually")
-    print(f"  python3 {Path(__file__).name} --status   # Check if loaded")
-    print(f"  python3 {Path(__file__).name} --unload   # Stop scheduling")
-    print(f"  python3 {Path(__file__).name} --remove   # Remove everything")
-    print(f"  python3 {Path(__file__).name} --debug    # Debug any issues")
-    print("\nOr view logs directly:")
-    print(f"  tail -f '{script_dir}/logs/stdout.log'")
-    print(f"  tail -f '{script_dir}/logs/stderr.log'")
 
 if __name__ == "__main__":
     main()
