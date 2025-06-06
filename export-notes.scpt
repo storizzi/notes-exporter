@@ -166,8 +166,8 @@ end writeToFile
 
 -- Subroutine to generate a valid filename, replace certain characters with dashes, remove non-alphanumeric characters (except dashes), and consolidate multiple dashes
 on makeValidFilename(fileName)
-    -- Replace slashes, underscores, and spaces with dashes
-    set charactersToReplace to {"/", "_", " ", ".", ","}
+    -- Replace only the genuinely problematic characters with dashes
+    set charactersToReplace to {"/", ":", "\\", "|", "<", ">", "\"", "'", "?", "*", "_", " ", ".", ","}
     repeat with aChar in charactersToReplace
         set AppleScript's text item delimiters to aChar
         set fileName to text items of fileName
@@ -175,35 +175,29 @@ on makeValidFilename(fileName)
         set fileName to fileName as string
     end repeat
 
-    -- Remove all characters that are not alphanumeric or dashes
-    set validFileName to ""
-    repeat with i from 1 to length of fileName
-        set currentChar to character i of fileName
-        if currentChar is in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-" then
-            set validFileName to validFileName & currentChar
-        end if
-    end repeat
-
     -- Consolidate multiple dashes into a single dash
-    set AppleScript's text item delimiters to "--"
-    set textItems to text items of validFileName
-    set AppleScript's text item delimiters to "-"
-    set validFileName to textItems as string
-
-    -- Check and replace again if necessary
-    repeat while validFileName contains "--"
+    repeat while fileName contains "--"
         set AppleScript's text item delimiters to "--"
-        set textItems to text items of validFileName
+        set textItems to text items of fileName
         set AppleScript's text item delimiters to "-"
-        set validFileName to textItems as string
+        set fileName to textItems as string
     end repeat
 
-    -- Remove trailing dash if present
-    if (length of validFileName > 1) and (validFileName ends with "-") then
-        set validFileName to text 1 through -2 of validFileName
+    -- Remove leading/trailing dashes
+    repeat while fileName starts with "-" and length of fileName > 1
+        set fileName to text 2 through -1 of fileName
+    end repeat
+    
+    repeat while fileName ends with "-" and length of fileName > 1
+        set fileName to text 1 through -2 of fileName
+    end repeat
+
+    -- Ensure filename isn't empty
+    if fileName is "" or fileName is "-" then
+        set fileName to "untitled"
     end if
 
-    return validFileName
+    return fileName
 end makeValidFilename
 
 -- Subroutine to generate a filename based on the specified format
