@@ -1,5 +1,6 @@
 .DS_Store
 /AppleNotesExport/
-exportnotes-wrapper.zsh
+exportnotes_wrapper.zsh
 .env
 logs/*
+__pycache__

@@ -4,15 +4,15 @@
     <img src="notes-exporter.jpg" alt="Notes Exporter" width="200">
 </figure>
 
-This tool facilitates the export of Apple Notes into various formats including HTML (.html) attachment-embedded, Plain Text, Markdown, PDF, and Word (DOCX) with images / attachments and most formatting left intact.
+This tool facilitates the export of Apple Notes into various formats including raw HTML, processed HTML (with local attachments), Plain Text, Markdown, PDF, and Word (DOCX) with images and most formatting left intact.
 
-You can use it either as a basic backup, or as a conversion tool - e.g. the Markdown format could be used in a note-taking tool like Obsidian which uses Markdown as standard.
+You can use it either as a basic backup or as a conversion tool - e.g. the Markdown format could be used in a note-taking tool like Obsidian which uses Markdown as standard.
 
-This tool works on a Mac (OSX) not on a Windows or Linux machine because it uses AppleScript to extract the data from notes. You need to have the Notes app installed.
+This tool works on a Mac (macOS) not on a Windows or Linux machine because it uses AppleScript to extract the data from notes. You need to have the Notes app installed.
 
-This allows for you to keep a local copy of your apple notes in case of failure, and also to use them in other markdown note-taking apps such as Obsidian, and quickly grab copies if you wish to send PDF versions to anyone, or work on a copy of the document from a Word document with all the images intact and inline in the right place.
+This allows for you to keep a local copy of your apple notes, use them in other markdown note-taking apps such as Obsidian, and quickly grab copies if you wish to send PDF versions to anyone, or work on a copy of the document from a Word document with all the images intact and inline in the right place.
 
-It also extracts images from the notes, so they can also be referenced from local HTML (.htm) documents, Markdown, PDF, or Word (DOCX) documents.
+It also extracts images from the notes, so they can also be referenced from local HTML, Markdown, PDF, or Word (DOCX) documents.
 
 * Released under [MIT license](./LICENSE.txt)
 * [Release Information](./RELEASES.md)
@@ -25,12 +25,12 @@ It also extracts images from the notes, so they can also be referenced from loca
 If Homebrew is not installed, open the Terminal and run this command:
 
 ```bash
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
 ### Install Git
 
-If Git is not already installed on your Mac, you can install it using Homebrew (or get a more up-to-date version!)
+If Git is not already installed on your Mac, you can install it using Homebrew (or get a more up-to-date version).
 
 ```bash
 brew install git
@@ -52,7 +52,6 @@ Clone the `notes-exporter` repository from GitHub:
 mkdir -p ~/bin/notes-exporter
 cd ~/bin/notes-exporter
 git clone https://github.com/storizzi/notes-exporter.git .
-cd notes-exporter
 ```
 
 ### Install Python and Dependencies
@@ -68,16 +67,21 @@ or alternatively if you want to use conda to install python environments you can
 brew install --cask miniconda
 ```
 
-If you are using conda, then you can get the script to do the next bit for you (see later) in which case you can skip the 'pip install' here - this is only recommended if you are installing python libraries globally.
+If you are using conda, then you can get the script to do the next bit for you (see later) in which case you can skip the 'pip install' here.
 
-After installing Python, install the required Python libraries using pip (markdownify is not required if you do not wish to generate markdown files and pypandoc is not required if you do not wish to generate docx / word files):
+After installing Python, it is easiest to install the required libraries using the `requirements.txt` file:
+
+```bash
+pip install -r ./requirements.txt
+```
+
+Alternatively, you can install them manually (`markdownify` is only required for Markdown conversion and `pypandoc` is only required for Word conversion):
 
 ```bash
 pip install beautifulsoup4  # For parsing HTML files.
 pip install markdownify     # For converting HTML to Markdown.
 pip install pypandoc        # For converting HTML to DOCX. Requires Pandoc.
 ```
-or alternatively ```pip install -r ./requirements.txt```
 
 **Note:** `pypandoc` requires Pandoc for generating docx (word documents). If you need this functionality, install it using Homebrew if not already installed:
 
@@ -85,12 +89,12 @@ or alternatively ```pip install -r ./requirements.txt```
 brew install pandoc
 ```
 
-**Note:** To convert to PDF, [Google Chrome](https://www.google.com/chrome/) needs to be installed
+**Note:** To convert to PDF, [Google Chrome](https://www.google.com/chrome/) needs to be installed.
 
 ### Additional Dependencies
 
-- **Google Chrome:** Needed for converting notes to PDF format.
-- **Pandoc:** Required if converting notes to Word (DOCX) format.
+* **Google Chrome:** Needed for converting notes to PDF format.
+* **Pandoc:** Required if converting notes to Word (DOCX) format.
 
 ## Basic Usage
 
@@ -98,14 +102,27 @@ The `exportnotes.zsh` script is used to export Apple Notes. It accepts various c
 
 ### Default Behavior
 
-By default, the script will:
+By default, the script performs an **incremental export**, which is significantly faster for regular use. It will:
 
-- Export notes for each account and folder in each account to the `~/Downloads/AppleNotesExport` directory as text in the `text` folder and as html files in the `html` folder - i.e. the AppleNotesExport folder inside the current user's Downloads folder, then the text / html folders underneath this, then a folder of the format `<account>-<folder/notebook>`
-  - The filenames are a simplified version of the title of each note with a .html ending - these have the images embedded inside them
-- Extract images from notes into the attachments folder
-  - The filenames are the filename of the image in which the attachment appears followed by a dash, followed by a number - e.g. the document my-document.html will appear as attachments/my-document-001.png
-- Not convert notes to Markdown, PDF, or Word unless specified.
-- Effectively, this makes the script work like a 'backup' to html files which can be browsed with a web browser
+* Export notes to the `$HOME/Downloads/AppleNotesExport` directory.
+* Create several subdirectories for organization:
+    * `data/`: Stores JSON files to track export status and modification dates for each note. This is the key to the fast incremental updates.
+    * `raw/`: Contains the raw HTML dump from Apple Notes with images embedded as base64 data.
+    * `html/`: Contains processed HTML files where embedded images have been extracted and replaced with links to local files.
+    * `text/`: Contains the plain text content of the notes.
+* Only process notes that are new or have been modified since the last run.
+* Automatically detect notes that have been deleted in the Notes app and mark them as `deleted` in the tracking files.
+* Use a default filename format of `&title-&id` (e.g., "My-Note-4159.html") to prevent conflicts between notes that have the same title.
+* If a note is renamed, the script automatically cleans up the old files and their attachments to prevent orphaned files.
+* Extract images into an `attachments` sub-folder. The image filename is based on the note's filename (e.g., `My-Note-4159-attachment-001.png`).
+* Not convert notes to Markdown, PDF, or Word unless specified.
+
+### Update Modes
+
+The script operates in two modes:
+
+* **Default (Incremental Update)**: This is the standard mode. It's very fast because it only processes notes that have changed since the last export. It uses the JSON files in the `data/` directory to determine what needs updating.
+* **Full Update (`--update-all`)**: This mode processes every note, regardless of its modification date. This is useful if you want to force a full regeneration of all files from scratch.
 
 ### Running the Script
 
@@ -116,7 +133,7 @@ cd ~/bin/notes-exporter
 chmod +x exportnotes.zsh
 ```
 
-Run the script from the directory where it is located or add the script's directory to your `PATH` in your `.zshrc` or `.bashrc` file for easy access. For example, if you place the scripts in `$HOME/bin/notes-exporter`:
+Run the script from its directory or add the script's directory to your `PATH` in your `.zshrc` file for easy access. For example:
 
 ```bash
 echo 'export PATH="$HOME/bin/notes-exporter:$PATH"' >> ~/.zshrc
@@ -127,13 +144,25 @@ Then, you can run the script from anywhere by just typing `exportnotes.zsh`.
 
 ### Examples
 
-Export notes with default settings (backup to user's Documents/NotesExport directory):
+Export notes with default settings (runs an incremental backup to `~/Downloads/AppleNotesExport`):
 
 ```bash
 exportnotes.zsh
 ```
 
-Export notes with default settings in a python conda environment called `notesexport` auto-creating and activating the environment if it doesn't exist, and auto-installing the required pip dependencies - or just activating that environment if it already exists:
+Force a full re-export of all notes, disabling the incremental update:
+
+```bash
+exportnotes.zsh --update-all
+```
+
+Export to all formats (HTML, Text, Markdown, PDF, Word) and extract images:
+
+```bash
+exportnotes.zsh --all
+```
+
+Export notes with default settings in a python conda environment called `notesexport`, auto-creating and activating the environment if it doesn't exist, and auto-installing the required pip dependencies:
 
 ```bash
 exportnotes.zsh --conda-env notesexport
@@ -142,14 +171,13 @@ exportnotes.zsh --conda-env notesexport
 Export notes to a specific directory and convert them to Markdown:
 
 ```bash
-mkdir $HOME/Documents/NotesExport
+mkdir -p $HOME/Documents/NotesExport
 exportnotes.zsh --root-dir $HOME/Documents/NotesExport --convert-markdown true
 ```
 
-Use existing imported files from a specific directory and convert to PDF
+Use existing exported files in a directory and convert them to PDF without re-extracting from Apple Notes:
 
 ```bash
-mkdir $HOME/Documents/NotesExport
 exportnotes.zsh --root-dir $HOME/Documents/NotesExport --extract-data false --convert-pdf true
 ```
 
@@ -181,44 +209,46 @@ exportnotes.zsh --filename-format "&account-&folder-&id" --use-subdirs false
 
 ### Command-Line Parameters
 
-- `--root-dir` or `-r`: Set the root directory for exports. Defaults to `$HOME/Downloads/AppleNotesExport`.
-- `--suppress-header-pdf` or `-s`: Suppress headers and footers in PDF exports. Set to `true` or `false`. Defaults to false
-- `--extract-data` or `-d`: Extract data from Apple Notes and store as raw html and text files. Set to `true` or `false`. Defaults to true
-- `--convert-word` or `-w`: Convert notes to Word (DOCX). Set to `true` or `false`. Defaults to false
-- `--convert-pdf` or `-p`: Convert notes to PDF. Set to `true` or `false`. Defaults to false
-- `--filename-format` or `-t`: Format of main part of filename before the filetype for word/pdf/html. Default is `&title` but can contain `&title` for a sanitized version of the title (note this can change), `&id` for the internal id Apple uses for the note, `&account` for the account name, `&folder` for the folder name, `&accountid` for the internal account id, and `&shortaccountid` for the short account id. You can include other characters, e.g. `Note-&title-&id` to make each note prefixed with `Note-` followed by the sanitized title, followed by a dash, followed by the note ID (just in case of duplicated titles).
-- `--extract-images` or `-i`: Extract images from notes. Set to `true` or `false`. Ignored if extracting to Markdown, PDF or Word as this is required. Defaults to true
-- `--note-limit` or `-l`: Set a limit on the number of notes to export. Defaults to no limit
-- `--note-limit-per-folder` or `-f`: Set a limit on the number of notes to export per folder. Defaults to no limit
-- `--note-pick-probability` or `-b`: Set the probability (percentage) of picking a note for export for 0-100 - default is 100 - if you want a random selection of notes. Defaults to 100 (all notes - 100% probability)
-- `--subdir-format` or `-u`: Format of subdirectory for each account and folder combination. Default is `&account-&folder` but can contain `&account` for the account name, `&folder` for the folder name, `&accountid` for the internal account id, and `&shortaccountid` for the short account id.
-- `--use-subdirs` or `-x`: Set to `false` to keep all files in a single directory (flattened). Default is `true`.
-- `--conda-env` or `-c`: Specify the Conda environment to use. If the environment does not exist, it will be created and the required dependencies installed. No conda environment installed by default.
-- `--remove-conda-env` or `-e`: Remove the specified Conda environment after the script runs. Set to `true` or `false`. Defaults to false
+* `--root-dir` or `-r`: Set the root directory for exports. Defaults to `$HOME/Downloads/AppleNotesExport`.
+* `--suppress-header-pdf` or `-s`: Suppress headers and footers in PDF exports. Set to `true` or `false`. Defaults to `true`.
+* `--extract-data` or `-d`: Extract data from Apple Notes. Set to `true` or `false`. Defaults to `true`.
+* `--extract-images` or `-i`: Extract images from notes. Set to `true` or `false`. Forced to `true` if converting to other formats. Defaults to `true`.
+* `--convert-markdown` or `-m`: Convert notes to Markdown. Set to `true` or `false`. Defaults to `false`.
+* `--convert-pdf` or `-p`: Convert notes to PDF. Set to `true` or `false`. Defaults to `false`.
+* `--convert-word` or `-w`: Convert notes to Word (DOCX). Set to `true` or `false`. Defaults to `false`.
+* `--update-all` or `-U`: Force a full update, disabling the default incremental export.
+* `--all-formats` or `--all` or `-a`: A shortcut to enable all conversions (Markdown, PDF, Word) and image extraction.
+* `--filename-format` or `-t`: Format for filenames. Default is `&title-&id`. Placeholders: `&title`, `&id`, `&account`, `&folder`, `&accountid`, `&shortaccountid`.
+* `--subdir-format` or `-u`: Format for subdirectories. Default is `&account-&folder`.
+* `--use-subdirs` or `-x`: Set to `false` to keep all files in a single directory. Default is `true`.
+* `--note-limit` or `-n`: Set a limit on the total number of notes to export.
+* `--note-limit-per-folder` or `-f`: Set a limit on the number of notes to export per folder.
+* `--note-pick-probability` or `-b`: The probability (0-100) of picking a note for export. Default is 100.
+* `--conda-env` or `-c`: Specify the Conda environment to use.
+* `--remove-conda-env` or `-e`: Remove the specified Conda environment after the script runs.
 
 ### Environment Variables
 
-Instead of using command line parameters, you can set up environment variables which will be used by default (and which can be overridden by command line parameters) if for example you want to set up a standard way of working when running the script but sometimes override the behavior.
+You can also use environment variables to set defaults, which can be overridden by command-line parameters.
 
-The available environment variables are:
+* `NOTES_EXPORT_ROOT_DIR`: Root directory for exports. Default: `$HOME/Downloads/AppleNotesExport`.
+* `NOTES_EXPORT_UPDATE_ALL`: Set to `true` to disable incremental updates and force a full export. Default: `false`.
+* `NOTES_EXPORT_SUPPRESS_CHROME_HEADER_PDF`: `true` or `false` to control PDF headers.
+* `NOTES_EXPORT_CONVERT_TO_MARKDOWN`: `true` to enable Markdown conversion.
+* `NOTES_EXPORT_CONVERT_TO_PDF`: `true` to enable PDF conversion.
+* `NOTES_EXPORT_CONVERT_TO_WORD`: `true` to enable Word (DOCX) conversion.
+* `NOTES_EXPORT_EXTRACT_IMAGES`: `true` to extract images.
+* `NOTES_EXPORT_EXTRACT_DATA`: `true` to extract data from Apple Notes.
+* `NOTES_EXPORT_NOTE_LIMIT`: Limit total notes exported.
+* `NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER`: Sets a limit on the number of notes to export per folder.
+* `NOTES_EXPORT_NOTE_PICK_PROBABILITY`: Sets the probability (as a percentage) of picking a note for export. Default is 100%.
+* `NOTES_EXPORT_FILENAME_FORMAT`: Format for filenames. Default is `&title-&id`. Placeholders are the same as the command-line option.
+* `NOTES_EXPORT_SUBDIR_FORMAT`: Format for subdirectories. Default is `&account-&folder`.
+* `NOTES_EXPORT_USE_SUBDIRS`: Set to `false` to keep all files in a single directory. Default is `true`.
+* `NOTES_EXPORT_CONDA_ENV`: Specifies the Conda environment to use.
+* `NOTES_EXPORT_REMOVE_CONDA_ENV`: Remove the specified Conda environment after the script runs. Default is `false`.
 
-- `NOTES_EXPORT_ROOT_DIR`: Specifies the root directory where the exported notes will be stored. Default is `$HOME/Downloads/AppleNotesExport`.
-- `NOTES_EXPORT_SUPPRESS_CHROME_HEADER_PDF`: Controls whether headers and footers are suppressed in PDF exports. Set to `true` to suppress, `false` otherwise.
-- `NOTES_EXPORT_CONVERT_TO_MARKDOWN`: Enables the conversion of notes to Markdown format. Set to `true` to enable conversion, `false` otherwise.
-- `NOTES_EXPORT_CONVERT_TO_PDF`: Enables the conversion of notes to PDF format. Set to `true` to enable conversion, `false` otherwise.
-- `NOTES_EXPORT_CONVERT_TO_WORD`: Enables the conversion of notes to Word (DOCX) format. Set to `true` to enable conversion, `false` otherwise.
-- `NOTES_EXPORT_EXTRACT_IMAGES`: Controls the extraction of images from notes. Set to `true` to extract images, `false` otherwise.
-- `NOTES_EXPORT_EXTRACT_DATA`: Determines whether to extract data from Apple Notes using the AppleScript to text and raw html files. Set to `true` to extract, `false` otherwise.
-- `NOTES_EXPORT_NOTE_LIMIT`: Sets a limit on the total number of notes to export. Default is no limit.
-- `NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER`: Sets a limit on the number of notes to export per folder. Default is no limit.
-- `NOTES_EXPORT_NOTE_PICK_PROBABILITY`: Sets the probability (as a percentage) of picking a note for export. Default is 100%.
-- `NOTES_EXPORT_FILENAME_FORMAT`: Format of main part of filename before the filetype for word/pdf/html. Default is `&title` but can contain `&title` for a sanitized version of the title (note this can change), `&id` for the internal id Apple uses for the note, `&account` for the account name, `&folder` for the folder name, `&accountid` for the internal account id, and `&shortaccountid` for the short account id. You can include other characters, e.g. `Note-&title-&id` to make each note prefixed with `Note-` followed by the sanitized title, followed by a dash, followed by the note ID (just in case of duplicated titles).
-- `NOTES_EXPORT_SUBDIR_FORMAT`: Format of subdirectory for each account and folder combination. Default is `&account-&folder` but can contain `&account` for the account name, `&folder` for the folder name, `&accountid` for the internal account id, and `&shortaccountid` for the short account id.
-- `NOTES_EXPORT_USE_SUBDIRS`: Set to `false` to keep all files in a single directory (flattened). Default is `true`.
-- `NOTES_EXPORT_CONDA_ENV`: Specifies the Conda environment to use. If the environment does not exist, it will be created and the required dependencies installed. Defaults to nothing being created.
-- `NOTES_EXPORT_REMOVE_CONDA_ENV`: Remove the specified Conda environment after the script runs. Set to `true` to remove, `false` otherwise. Default is `false`.
-
-You could add these to your `.zshrc` file for example to set up defaults so you don't have to use command-line parameters if you want to set up a specific location to export to, for example - e.g.
+You could add these to your `.zshrc` file to set up defaults, for example:
 
 ```text
 export NOTES_EXPORT_ROOT_DIR=$HOME/Documents/NotesExport
@@ -226,59 +256,45 @@ export NOTES_EXPORT_ROOT_DIR=$HOME/Documents/NotesExport
 
 ### Configure Zsh
 
-To make the scripts easily accessible, add the script directory to your `PATH` in the `.zshrc` file so you can just run the command when you open the terminal:
+To make the scripts easily accessible, add the script directory to your `PATH` in the `.zshrc` file.
 
-1. **Open `.zshrc` in a text editor (e.g., nano, vim):**
+1.  **Open `.zshrc` in a text editor (e.g., nano, vim):**
 
-   ```bash
-   nano ~/.zshrc
-   ```
-2. **Add the following line to the file:**
-   Replace `/path/to/notes-exporter` with the actual path to the `notes-exporter` directory - e.g. `$HOME/bin` if you have copied the files to the `bin` directory for your user's mac account.
+    ```bash
+    nano ~/.zshrc
+    ```
+2.  **Add the following line to the file:**
+    Replace `/path/to/notes-exporter` with the actual path to the `notes-exporter` directory.
 
-   ```text
-   export PATH="/path/to/notes-exporter:$PATH"
-   ```
-3. **Save and close the file:**
-   If using nano, press `CTRL + X`, then `Y` to save, and `Enter` to exit.
-4. **Reload the `.zshrc` file:**
+    ```text
+    export PATH="/path/to/notes-exporter:$PATH"
+    ```
+3.  **Save and close the file.**
+4.  **Reload the `.zshrc` file:**
 
-   ```bash
-   source ~/.zshrc
-   ```
-   or just start a new Terminal window or tab.
+    ```bash
+    source ~/.zshrc
+    ```
 
 ## Scheduling Automatic Exports
 
-You can schedule the notes export to run automatically at regular intervals using macOS's built-in `launchd` system. This is more reliable than using `cron` for AppleScript-based tasks because it runs with full user permissions and GUI access.
+You can schedule the notes export to run automatically using macOS's built-in `launchd` system. This is more reliable than using `cron` for AppleScript-based tasks.
 
 ## Setup Automatic Scheduling
 
 #### Permissions Setup
 
-**Important**: The first time you run the script (either manually or scheduled), macOS will prompt for permissions to access the Notes app. To avoid repeated popups:
+**Important**: The first time you run the script, macOS will prompt for permissions to access the Notes app. To avoid repeated popups:
 
-1. **Grant Full Disk Access** to Terminal (or your shell):
-   - System Preferences → Security & Privacy → Privacy → Full Disk Access
-   - Click the lock and enter your password
-   - Click "+" and add Terminal (or iTerm if you use that)
-
-2. **Grant Accessibility permissions** to osascript:
-   - System Preferences → Security & Privacy → Privacy → Accessibility  
-   - Add Terminal and/or osascript if prompted
-
-3. **Allow automation** for the Notes app:
-   - When first prompted, click "OK" to allow Terminal to control Notes
-   - Or go to System Preferences → Security & Privacy → Privacy → Automation
-   - Ensure Terminal is allowed to control Notes
+1.  **Grant Full Disk Access** to Terminal (or your shell).
+2.  **Grant Accessibility permissions** to osascript.
+3.  **Allow automation** for the Notes app.
 
 Once these permissions are granted, the scheduled jobs will run without prompts.
 
 ### Install the Scheduling Tool
 
-A Python script is provided to easily set up and manage scheduled exports. This script handles all the complexity of creating the necessary configuration files and setting correct permissions.
-
-First, ensure you have Python 3 installed (it should be available if you followed the setup instructions above).
+A Python script is provided to easily set up and manage scheduled exports. This script handles creating the necessary configuration files and setting permissions.
 
 #### Create Scheduled Export
 
@@ -297,16 +313,13 @@ python3 setup_launchd.py --hour 14 --minute 30
 
 # Run every 60 minutes
 python3 setup_launchd.py --interval 60
-
-# Different script directory
-python3 setup_launchd.py --script-dir /path/to/notes-exporter
 ```
 
 This creates:
-- A wrapper script that properly loads your shell environment
-- A launchd configuration file for scheduling
-- A logs directory for monitoring the exports
-- A sample `.env` file for custom environment variables
+* A wrapper script that properly loads your shell environment.
+* A launchd configuration file for scheduling.
+* A `logs` directory for monitoring the exports.
+* A sample `.env` file for custom environment variables.
 
 #### Manage the Scheduled Job
 
@@ -331,7 +344,7 @@ python3 setup_launchd.py --remove
 
 #### Environment Variables for Scheduled Jobs
 
-When running as a scheduled job, you may want to set custom environment variables. Edit the `.env` file in your script directory:
+When running as a scheduled job, you can set custom environment variables by editing the `.env` file in your script directory:
 
 ```bash
 nano .env
@@ -343,7 +356,6 @@ Example `.env` configuration:
 # Export settings
 export NOTES_EXPORT_ROOT_DIR="$HOME/Documents/NotesBackup"
 export NOTES_EXPORT_CONVERT_TO_MARKDOWN="true"
-export NOTES_EXPORT_EXTRACT_IMAGES="true"
 
 # Conda environment
 export NOTES_EXPORT_CONDA_ENV="notes-export"
@@ -369,25 +381,15 @@ tail -f logs/debug.log
 
 The debug log shows environment information that can help troubleshoot any issues with the scheduled execution.
 
-#### Typical Workflow
-
-1. **Set up**: `python3 setup_launchd.py --hour 9`
-2. **Configure**: Edit `.env` file if needed for custom settings
-3. **Activate**: `python3 setup_launchd.py --load`
-4. **Test**: `python3 setup_launchd.py --test`
-5. **Monitor**: Check logs periodically
-
 #### Troubleshooting Scheduled Jobs
 
 If your scheduled job isn't working:
 
-1. **Check job status**: `python3 setup_launchd.py --status`
-2. **Review logs**: Look at `logs/stderr.log` for errors
-3. **Test manually**: Run `python3 setup_launchd.py --test`
-4. **Check permissions**: The script automatically sets correct permissions, but verify your Notes app has necessary accessibility permissions
-5. **Environment issues**: Check `logs/debug.log` for environment variable problems
-
-**Note**: Scheduled jobs run in a more limited environment than your normal terminal session. The wrapper script sources your shell configuration files and the `.env` file to ensure the necessary environment is available.
+1.  **Check job status**: `python3 setup_launchd.py --status`
+2.  **Review logs**: Look at `logs/stderr.log` for errors.
+3.  **Test manually**: Run `python3 setup_launchd.py --test`.
+4.  **Check permissions**: Verify your Notes app has necessary accessibility permissions.
+5.  **Environment issues**: Check `logs/debug.log` for environment variable problems.
 
 #### Remove Scheduling
 

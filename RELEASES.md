@@ -2,6 +2,41 @@
 
 Release information follows...
 
+## 10 June 2025 - Release 1.0.0 - Incremental Export & Deletion Tracking - BREAKING CHANGES!
+
+In this release, we introduce update mode, making exports up to 5x faster and overall processing including conversions up to 12x faster for everyday use.
+
+This involves breaking changes, so it is recommended that you regenerate your data directories, to improve performance and a few weird design decisions made early on. In particular, the html directory has been broken up into the raw directory for raw extracted html files with embedded images, and the html directory (with html extensions instead of htm) for html with the images broken out into a subdirectory.  Filenames now include the document ID to avoid overwrites of files with the same title, and a new data directory keeps track of what has been read and written allowing for a new default option of only reading documents from Apple Notes, and updating documents already exported where they have changed - including renames. Quite the overhaul, and hopefully you'll notice the difference when exporting regularly.
+
+* **Build versioning introduced**: I'm doing n.n.n style versioning with major versions for big structural changes (like this one - 1.0.0), minor versions (e.g. 1.1.0) for things involving breaking changes, and build numbers for small feature improvements and bug fixes (e.g. 1.1.1).
+* **Incremental Export System**: Complete rewrite of conversion scripts to use JSON-based tracking for dramatically improved performance
+  * New shared utility module (`notes_export_utils.py`) - only processes notes that have changed since last export
+  * Tracks export status per format: `lastExportedToMarkdown`, `lastExportedToPdf`, `lastExportedToWord`, `lastExportedToImages`
+  * Subsequent exports are much, much faster as only changed/new notes are processed (by default)
+* **Deletion Tracking**: Automatically detects when notes are removed from Apple Notes and marks them with `deletedDate` timestamp
+* **Filename Collision Prevention**: Changed default filename format from `&title` to `&title-&id` to ensure unique filenames and avoiding accidental overwrites
+* **All-Formats Export**: Added `--all-formats`/`--all`/`-a` flag to read data (raw / text) and export to all formats (HTML, Markdown, PDF, Word, images) in one command
+* **Renaming**: When a file is renamed in an update, all converted files are deleted, and all associated images are deleted, and regenerated with new filenames so you don't end up with orphan old copies of documents and images hanging about
+* **JSON Tracking Data**: New tracking system using JSON files in `data/` directory to store note metadata and export history - will be expanding on this in future versions
+* **Enhanced Character Handling**: Further improved filename sanitization while preserving Unicode characters and international text
+* **Performance Optimization**: All Python conversion scripts rewritten for incremental processing - first export same speed, subsequent exports dramatically faster by checking the last modification date
+* **File Naming Consistency**: Standardized script filenames to use underscores instead of dashes (e.g., `convert_to_markdown.py`, `extract_images.py`)
+* **Update dependencies**: Updated requirements.txt as the library versions were a bit outdated
+
+### Speed comparison - Update mode vs Recreate everything mode
+
+| Metric                     | Fresh Export | Update Mode | Speedup (Fresh ÷ Update) |
+| -------------------------- | -----------: | ----------: | -----------------------: |
+| **AppleScript processing** |        687 s |       129 s |                    5.33× |
+| **Other operations**       |        882 s |         1 s |                     882× |
+| **Combined total**         |      1 569 s |       130 s |                   12.07× |
+
+* **AppleScript processing** in a fresh run takes about 5.3 times as long as in update-only mode.
+* **Conversion/other operations** take some 882 times longer when re-exporting everything.
+* **Overall**, a full fresh export is roughly **12 times** slower than simply checking for updates with no changes.
+
+This uses a sample size of 769 notes, many including a lot of images embedded, exporting to HTML, Docx, Markdown and PDF (as well as the default raw html and text formats).
+
 ## 6 June 2025 - Release 0.3 - Automated Scheduling & Output Improvements
 
 ### New Features

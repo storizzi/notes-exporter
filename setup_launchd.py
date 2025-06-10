@@ -53,7 +53,7 @@ echo "------------------------------" >> logs/debug.log
 ./exportnotes.zsh "$@"
 """
     
-    wrapper_path = script_dir / "exportnotes-wrapper.zsh"
+    wrapper_path = script_dir / "exportnotes_wrapper.zsh"
     with open(wrapper_path, 'w') as f:
         f.write(wrapper_content)
     
@@ -87,12 +87,12 @@ def create_plist_file(username, home_dir, script_dir, schedule_hour=9, schedule_
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.{username}.notes-exporter</string>
+    <string>com.{username}.notes_exporter</string>
     
     <key>ProgramArguments</key>
     <array>
         <string>/bin/zsh</string>
-        <string>{script_dir}/exportnotes-wrapper.zsh</string>
+        <string>{script_dir}/exportnotes_wrapper.zsh</string>
     </array>
     
     <key>WorkingDirectory</key>
@@ -128,7 +128,7 @@ def create_plist_file(username, home_dir, script_dir, schedule_hour=9, schedule_
     launch_agents_dir = home_dir / "Library" / "LaunchAgents"
     launch_agents_dir.mkdir(exist_ok=True)
     
-    plist_path = launch_agents_dir / f"com.{username}.notes-exporter.plist"
+    plist_path = launch_agents_dir / f"com.{username}.notes_exporter.plist"
     with open(plist_path, 'w') as f:
         f.write(plist_content)
     
@@ -170,12 +170,12 @@ def create_env_file(script_dir):
 
 def is_job_loaded(username):
     """Check if the job is currently loaded (returns True/False)"""
-    result = os.system(f"launchctl list | grep -q notes-exporter")
+    result = os.system(f"launchctl list | grep -q notes_exporter")
     return result == 0
 
 def load_job(username, home_dir):
     """Load the launchd job"""
-    plist_path = home_dir / "Library" / "LaunchAgents" / f"com.{username}.notes-exporter.plist"
+    plist_path = home_dir / "Library" / "LaunchAgents" / f"com.{username}.notes_exporter.plist"
     
     if not plist_path.exists():
         print(f"Error: Plist file not found at {plist_path}")
@@ -201,7 +201,7 @@ def load_job(username, home_dir):
 
 def unload_job(username, home_dir):
     """Unload the launchd job"""
-    plist_path = home_dir / "Library" / "LaunchAgents" / f"com.{username}.notes-exporter.plist"
+    plist_path = home_dir / "Library" / "LaunchAgents" / f"com.{username}.notes_exporter.plist"
     
     print(f"Unloading launchd job from: {plist_path}")
     result = os.system(f"launchctl unload '{plist_path}' 2>/dev/null")
@@ -214,8 +214,8 @@ def unload_job(username, home_dir):
 
 def test_job(username):
     """Test run the launchd job manually"""
-    print(f"Starting manual test run of job: com.{username}.notes-exporter")
-    result = os.system(f"launchctl start com.{username}.notes-exporter")
+    print(f"Starting manual test run of job: com.{username}.notes_exporter")
+    result = os.system(f"launchctl start com.{username}.notes_exporter")
     if result == 0:
         print("✓ Test job started!")
         print("Check the logs to see if it ran successfully:")
@@ -230,7 +230,7 @@ def check_job_status(username):
     print("Checking job status...")
     if is_job_loaded(username):
         # Show detailed status
-        os.system(f"launchctl list | grep notes-exporter")
+        os.system(f"launchctl list | grep notes_exporter")
         return True
     else:
         print("✗ Job is not loaded")
@@ -239,8 +239,8 @@ def check_job_status(username):
 def remove_launchd_setup(username, home_dir, script_dir):
     """Remove the launchd setup (unload and delete files)"""
     launch_agents_dir = home_dir / "Library" / "LaunchAgents"
-    plist_path = launch_agents_dir / f"com.{username}.notes-exporter.plist"
-    wrapper_path = script_dir / "exportnotes-wrapper.zsh"
+    plist_path = launch_agents_dir / f"com.{username}.notes_exporter.plist"
+    wrapper_path = script_dir / "exportnotes_wrapper.zsh"
     
     print(f"Removing launchd setup for user: {username}")
     
@@ -266,8 +266,8 @@ def remove_launchd_setup(username, home_dir, script_dir):
 
 def debug_plist(username, home_dir, script_dir):
     """Debug the plist file and related paths"""
-    plist_path = home_dir / "Library" / "LaunchAgents" / f"com.{username}.notes-exporter.plist"
-    wrapper_path = script_dir / "exportnotes-wrapper.zsh"
+    plist_path = home_dir / "Library" / "LaunchAgents" / f"com.{username}.notes_exporter.plist"
+    wrapper_path = script_dir / "exportnotes_wrapper.zsh"
     main_script = script_dir / "exportnotes.zsh"
     
     print("=== DEBUGGING PLIST SETUP ===")
@@ -324,7 +324,7 @@ def debug_plist(username, home_dir, script_dir):
     print("4. Current job status:")
     if is_job_loaded(username):
         print("   Job is currently loaded:")
-        os.system(f"launchctl list | grep notes-exporter")
+        os.system(f"launchctl list | grep notes_exporter")
     else:
         print("   Job is not loaded")
     print()
