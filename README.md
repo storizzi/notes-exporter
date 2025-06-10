@@ -302,17 +302,17 @@ To set up a daily export at 9:00 AM:
 
 ```bash
 cd ~/bin/notes-exporter
-python3 setup_launchd.py
+python setup_launchd.py
 ```
 
 Or with custom scheduling options:
 
 ```bash
 # Run daily at 2:30 PM
-python3 setup_launchd.py --hour 14 --minute 30
+python setup_launchd.py --hour 14 --minute 30
 
 # Run every 60 minutes
-python3 setup_launchd.py --interval 60
+python setup_launchd.py --interval 60
 ```
 
 This creates:
@@ -327,19 +327,19 @@ After creating the setup, use these commands to manage your scheduled exports:
 
 ```bash
 # Start scheduling (activate the job)
-python3 setup_launchd.py --load
+python setup_launchd.py --load
 
 # Test run manually to verify it works
-python3 setup_launchd.py --test
+python setup_launchd.py --test
 
 # Check if the job is currently scheduled
-python3 setup_launchd.py --status
+python setup_launchd.py --status
 
 # Stop scheduling (but keep files)
-python3 setup_launchd.py --unload
+python setup_launchd.py --unload
 
 # Remove everything (stop scheduling and delete all setup files)
-python3 setup_launchd.py --remove
+python setup_launchd.py --remove
 ```
 
 #### Environment Variables for Scheduled Jobs
@@ -385,9 +385,9 @@ The debug log shows environment information that can help troubleshoot any issue
 
 If your scheduled job isn't working:
 
-1.  **Check job status**: `python3 setup_launchd.py --status`
+1.  **Check job status**: `python setup_launchd.py --status`
 2.  **Review logs**: Look at `logs/stderr.log` for errors.
-3.  **Test manually**: Run `python3 setup_launchd.py --test`.
+3.  **Test manually**: Run `python setup_launchd.py --test`.
 4.  **Check permissions**: Verify your Notes app has necessary accessibility permissions.
 5.  **Environment issues**: Check `logs/debug.log` for environment variable problems.
 
@@ -396,7 +396,7 @@ If your scheduled job isn't working:
 To completely remove the scheduled export setup:
 
 ```bash
-python3 setup_launchd.py --remove
+python setup_launchd.py --remove
 ```
 
 This unloads the job and removes the scheduling files while leaving your main `exportnotes.zsh` script and any exported data intact.
