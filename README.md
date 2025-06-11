@@ -1,4 +1,4 @@
-# Apple Notes Export Tool
+# Apple Notes Export Tool <!-- omit from toc -->
 
 <figure style="float: right; margin-left: 10px;">
     <img src="notes-exporter.jpg" alt="Notes Exporter" width="200">
@@ -17,6 +17,39 @@ It also extracts images from the notes, so they can also be referenced from loca
 * Released under [MIT license](./LICENSE.txt)
 * [Release Information](./RELEASES.md)
 * [Possible features ](./TODO.md)for future versions
+
+Of course. Here is a functional Table of Contents in a Markdown block, with links that point to the corresponding sections within the document.
+
+Of course. Here is a functional Table of Contents in a Markdown block, with links that point to the corresponding sections within the document.
+
+## Table of Contents <!-- omit from toc -->
+
+- [Setup](#setup)
+  - [Install homebrew](#install-homebrew)
+  - [Install Git](#install-git)
+  - [Decide where to download the script](#decide-where-to-download-the-script)
+  - [Clone the Repository](#clone-the-repository)
+  - [Install Python and Dependencies](#install-python-and-dependencies)
+  - [Additional Dependencies](#additional-dependencies)
+- [Basic Usage](#basic-usage)
+  - [Default Behavior](#default-behavior)
+  - [Update Modes](#update-modes)
+  - [Running the Script](#running-the-script)
+  - [Examples](#examples)
+- [Advanced Usage](#advanced-usage)
+  - [Command-Line Parameters](#command-line-parameters)
+  - [Environment Variables](#environment-variables)
+  - [Configure Zsh](#configure-zsh)
+- [Scheduling Automatic Exports](#scheduling-automatic-exports)
+- [Setup Automatic Scheduling](#setup-automatic-scheduling)
+    - [Permissions Setup](#permissions-setup)
+  - [Install the Scheduling Tool](#install-the-scheduling-tool)
+    - [Create Scheduled Export](#create-scheduled-export)
+    - [Manage the Scheduled Job](#manage-the-scheduled-job)
+    - [Environment Variables for Scheduled Jobs](#environment-variables-for-scheduled-jobs)
+    - [Monitor Scheduled Exports](#monitor-scheduled-exports)
+    - [Troubleshooting Scheduled Jobs](#troubleshooting-scheduled-jobs)
+    - [Remove Scheduling](#remove-scheduling)
 
 ## Setup
 

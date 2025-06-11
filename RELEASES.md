@@ -1,6 +1,10 @@
-# Releases
+# Releases <!-- omit from toc -->
 
-Release information follows...
+- [10 June 2025 - Release 1.0.0 - Incremental Export \& Deletion Tracking - BREAKING CHANGES!](#10-june-2025---release-100---incremental-export--deletion-tracking---breaking-changes)
+- [6 June 2025 - Release 0.3 - Automated Scheduling \& Output Improvements](#6-june-2025---release-03---automated-scheduling--output-improvements)
+- [10 June 2024 - Release 0.2 - Filename format / other file types](#10-june-2024---release-02---filename-format--other-file-types)
+- [8 December 2023 - Release 0.1 - Initial Release](#8-december-2023---release-01---initial-release)
+
 
 ## 10 June 2025 - Release 1.0.0 - Incremental Export & Deletion Tracking - BREAKING CHANGES!
 
@@ -23,7 +27,7 @@ This involves breaking changes, so it is recommended that you regenerate your da
 * **File Naming Consistency**: Standardized script filenames to use underscores instead of dashes (e.g., `convert_to_markdown.py`, `extract_images.py`)
 * **Update dependencies**: Updated requirements.txt as the library versions were a bit outdated
 
-### Speed comparison - Update mode vs Recreate everything mode
+### Speed comparison - Update mode vs Recreate everything mode <!-- omit from toc -->
 
 | Metric                     | Fresh Export | Update Mode | Speedup (Fresh ÷ Update) |
 | -------------------------- | -----------: | ----------: | -----------------------: |
@@ -39,7 +43,7 @@ This uses a sample size of 769 notes, many including a lot of images embedded, e
 
 ## 6 June 2025 - Release 0.3 - Automated Scheduling & Output Improvements
 
-### New Features
+### New Features <!-- omit from toc -->
 * **Automated Scheduling System**: Added comprehensive LaunchD scheduling support for macOS
   * New Python script (`setup_launchd.py`) for creating, managing, and debugging scheduled exports
   * Automatic wrapper script generation that properly sources shell environment and conda
@@ -49,26 +53,26 @@ This uses a sample size of 769 notes, many including a lot of images embedded, e
   * Comprehensive logging with separate stdout/stderr streams
   * Smart job reloading that automatically unloads existing jobs before loading new ones
 
-### Improvements
+### Improvements <!-- omit from toc -->
 * **Better Output Handling**: Modified AppleScript to properly route informational messages to stdout and errors to stderr
 * **Combined Commands**: Support for chaining multiple actions in a single command (e.g., `--hour 22 --minute 15 --load --test`)
 * **Environment File Support**: Added `.env` file support for custom environment variables in scheduled jobs
 * **Enhanced Debugging**: Added comprehensive debugging tools to troubleshoot scheduling and permission issues
 * **Documentation**: Added detailed scheduling section to README.md with setup instructions and troubleshooting
 
-### Bug Fixes
+### Bug Fixes <!-- omit from toc -->
 * Fixed AppleScript filename validation to handle edge case where removing trailing dash could result in empty filename
 * Improved error handling for file write operations in AppleScript
 * Fixed permission issues that could cause "Input/output error" when loading jobs
 * Enhanced environment variable detection and sourcing for scheduled execution
 
-### Technical Details
+### Technical Details <!-- omit from toc -->
 * LaunchD integration provides more reliable scheduling than cron for GUI applications
 * Automatic detection of conda installations and proper environment activation
 * Support for multiple scheduling patterns and easy reconfiguration
 * Comprehensive permission setup guide for macOS security requirements
 
-## 10 Jun 2024 - Release 0.2 - Filename format / other file types
+## 10 June 2024 - Release 0.2 - Filename format / other file types
 
 * `--filename-format` Format of main part of filename before the filetype for word/pdf/html - default is &title but can contain &title for a santitized version of the title (note this can change), and / or &id for the internal id apple uses for the note to generate a filename with a specific format. Thanks to @cromulus for the suggestion and sample code - I decided rather than to have an ID option to have a more general file format option so if more file format requirements appear, we don't need to have lots of new command line options / environment variables!
 * Similar for `--subdir-format` - the notes folder subdirectory is now optional and can be formatted
@@ -78,7 +82,7 @@ This uses a sample size of 769 notes, many including a lot of images embedded, e
 * Update README.md to include better install instructions, including miniconda
 * Fix issue where problematic parameters could cause an infinite while loop in shell script
 
-## 8 Dec 2023 - Release 0.1 - Initial Release
+## 8 December 2023 - Release 0.1 - Initial Release
 
 Initial release with features like:
 
