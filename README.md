@@ -18,10 +18,6 @@ It also extracts images from the notes, so they can also be referenced from loca
 * [Release Information](./RELEASES.md)
 * [Possible features ](./TODO.md)for future versions
 
-Of course. Here is a functional Table of Contents in a Markdown block, with links that point to the corresponding sections within the document.
-
-Of course. Here is a functional Table of Contents in a Markdown block, with links that point to the corresponding sections within the document.
-
 ## Table of Contents <!-- omit from toc -->
 
 - [Setup](#setup)
