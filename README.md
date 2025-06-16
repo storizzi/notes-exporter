@@ -50,6 +50,7 @@ Of course. Here is a functional Table of Contents in a Markdown block, with link
     - [Monitor Scheduled Exports](#monitor-scheduled-exports)
     - [Troubleshooting Scheduled Jobs](#troubleshooting-scheduled-jobs)
     - [Remove Scheduling](#remove-scheduling)
+- [Tests](#tests)
 
 ## Setup
 
@@ -433,3 +434,13 @@ python setup_launchd.py --remove
 ```
 
 This unloads the job and removes the scheduling files while leaving your main `exportnotes.zsh` script and any exported data intact.
+
+## Tests
+
+Sample tests have been introduced to kick off unit testing on the tool. To run them, use the command:
+
+```
+tests/test.zsh
+```
+
+which kicks off pytest in verbos mode, writing the results to `test_results.txt` in the tests directory.

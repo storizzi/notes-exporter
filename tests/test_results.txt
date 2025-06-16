@@ -1,0 +1,13 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.9, pytest-8.4.0, pluggy-1.5.0 -- /opt/homebrew/Caskroom/miniconda/base/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/simon/dev/storizzi/repos/apps/server/notes-exporter/tests
+plugins: anyio-4.9.0
+collecting ... collected 4 items
+
+test_tracker.py::test_uses_subdirs_true PASSED                           [ 25%]
+test_tracker.py::test_uses_subdirs_false PASSED                          [ 50%]
+test_tracker.py::test_get_output_path_with_subdirs PASSED                [ 75%]
+test_tracker.py::test_get_output_path_without_subdirs PASSED             [100%]
+
+============================== 4 passed in 0.01s ===============================

@@ -4,3 +4,4 @@ exportnotes_wrapper.zsh
 .env
 logs/*
 __pycache__
+tests/.pytest_cache/
