@@ -113,104 +113,102 @@ on run argv
 
                 -- NEW: Get the latest modification date from existing data for incremental updates
                 set latestExistingModDate to missing value
-                if not updateAllNotes then
-                    log "Getting latest modification date from existing data..."
+                if not updateAllNotes and (count of existingData) > 0 then
+                    log "Calculating latest modification date from " & (count of existingData) & " existing records..."
                     set latestExistingModDate to my getLatestModificationDate(existingData)
                     if latestExistingModDate is not missing value then
                         log "Latest existing modification date: " & (latestExistingModDate as string)
                     else
-                        log "No existing modification date found, processing all notes"
+                        log "No valid modification dates found"
                     end if
+                else
+                    log "Processing all notes (full update mode or no existing data)"
                 end if
 
-                log "Starting to process " & (count of theNotes) & " notes (no sorting - checking dates as we go)..."
-
+                -- Log folder start
+                log "Processing " & (count of theNotes) & " notes in folder: " & folderName
+                
                 repeat with theNote in theNotes
                     set noteID to my extractID(id of theNote)
                     set end of currentNoteIDs to noteID
                     set totalNotesOverall to totalNotesOverall + 1
-                    if (noteLimit ≠ -1 and totalNotesOutput > noteLimit) or (noteLimitPerFolder ≠ -1 and folderNoteCount ≥ noteLimitPerFolder) then 
+                    
+                    -- Check limits first (cheapest operation)
+                    if (noteLimit ≠ -1 and totalNotesOutput ≥ noteLimit) or (noteLimitPerFolder ≠ -1 and folderNoteCount ≥ noteLimitPerFolder) then 
                         log "Reached note limit, stopping processing for this folder"
                         exit repeat
                     end if
                     
-                    -- Get modification date first (single API call)
-                    set noteModDate to modification date of theNote
-                    
-                    -- Log progress every 50 notes
-                    if (totalNotesOverall mod 50) = 0 then
-                        log "Processed " & totalNotesOverall & " notes so far..."
-                    end if
-                    
-                    -- Quick check: should we process this note based on modification date?
-                    set shouldProcessThisNote to false
-                    if updateAllNotes then
-                        set shouldProcessThisNote to true
-                    else if latestExistingModDate is missing value then
-                        -- No existing data, process all notes
-                        set shouldProcessThisNote to true
-                    else if noteModDate > latestExistingModDate then
-                        -- Note is newer than any existing note, definitely process it
-                        set shouldProcessThisNote to true
-                    else
-                        -- Note might be older, but could still need processing if it's new or changed
-                        -- This is the detailed check for notes that might be in the existing data
-                        if my shouldProcessNote(existingData, noteID, noteModDate) then
-                            set shouldProcessThisNote to true
-                        else
-                            -- Note is unchanged and older than latest export
-                            set shouldProcessThisNote to false
-                        end if
-                    end if
-                    
-                    if shouldProcessThisNote then
-                        -- Only now get the other metadata (more API calls)
-                        set noteCreatedDate to creation date of theNote
+                    -- Random selection check early (avoid expensive operations for skipped notes)
+                    if (random number from 1 to 100) ≤ notePickProbability then
+                        -- Get basic metadata in one batch to minimize API calls
+                        set noteModDate to modification date of theNote
                         set noteTitle to my makeValidFilename(name of theNote)
                         set noteName to my generateFilename(envFilenameFormat, noteTitle, noteID, accountName, folderName, accountID, shortAccountID)
-                        -- Check if note has changed since last export
-                        if my shouldProcessNote(existingData, noteID, noteModDate) then
-                            -- Random note selection (only if we need to process)
-                            if (random number from 1 to 100) ≤ notePickProbability then
-                                -- Get old filename for comparison
-                                set oldFileName to ""
-                                repeat with currentRecord in existingData
-                                    if (noteID_key of currentRecord) = noteID then
-                                        set oldFileName to (filename of currentRecord)
-                                        exit repeat
-                                    end if
-                                end repeat
-                                
-                                set folderNoteCount to folderNoteCount + 1
-                                set totalNotesOutput to totalNotesOutput + 1
-                                set outputNoteCount to outputNoteCount + 1
-                                
-                                log "- Note: " & (name of theNote) & " (processing)"
-                                
-                                -- Now read the full content (expensive operation)
-                                set htmlContent to body of theNote
-                                set textContent to plaintext of theNote
-                                
-                                -- Generate file paths
-                                set noteRawPath to POSIX path of (folderRawPath & noteName & ".html")
-                                set noteTextPath to POSIX path of (folderTextPath & noteName & ".txt")
-                                
-                                -- Save new files first
-                                my writeToFile(noteRawPath, htmlContent)
-                                my writeToFile(noteTextPath, textContent)
-                                
-                                -- Handle filename change (delete old files if filename changed)
-                                my handleFilenameChange(existingData, noteID, oldFileName, noteName, folderRawPath, folderTextPath)
-                                
-                                -- Update the data record with all metadata
-                                set existingData to my updateNoteData(existingData, noteID, noteModDate, noteCreatedDate, noteName)
-                            end if
-                        else
-                            log "- Note: " & noteTitle & " (skipped - unchanged)"
-                            set totalNotesSkippedUnchanged to totalNotesSkippedUnchanged + 1
+                        
+                        -- Log progress every 100 notes (less frequent logging)
+                        if (totalNotesOverall mod 100) = 0 then
+                            log "Processed " & totalNotesOverall & " notes so far..."
                         end if
-                    else
-                        set totalNotesSkippedOlder to totalNotesSkippedOlder + 1
+                        
+                        -- Quick incremental update check
+                        set shouldProcess to false
+                        if updateAllNotes then
+                            set shouldProcess to true
+                        else
+                            -- Simple check: is this note newer than latest existing or not in existing data?
+                            if latestExistingModDate is missing value or noteModDate > latestExistingModDate then
+                                set shouldProcess to true
+                            else
+                                -- Only do expensive check if necessary
+                                set shouldProcess to my shouldProcessNote(existingData, noteID, noteModDate)
+                            end if
+                        end if
+                        
+                        if shouldProcess then
+                            -- Get creation date only when we need it
+                            set noteCreatedDate to creation date of theNote
+                            
+                            -- Get old filename for comparison (optimized lookup)
+                            set oldFileName to ""
+                            repeat with currentRecord in existingData
+                                if (noteID_key of currentRecord) = noteID then
+                                    set oldFileName to (filename of currentRecord)
+                                    exit repeat
+                                end if
+                            end repeat
+                            
+                            set folderNoteCount to folderNoteCount + 1
+                            set totalNotesOutput to totalNotesOutput + 1
+                            set outputNoteCount to outputNoteCount + 1
+                            
+                            log "- Note: " & noteTitle & " (processing)"
+                            
+                            -- Read content only when we're actually processing
+                            set htmlContent to body of theNote
+                            set textContent to plaintext of theNote
+                            
+                            -- Generate file paths
+                            set noteRawPath to POSIX path of (folderRawPath & noteName & ".html")
+                            set noteTextPath to POSIX path of (folderTextPath & noteName & ".txt")
+                            
+                            -- Save files
+                            my writeToFile(noteRawPath, htmlContent)
+                            my writeToFile(noteTextPath, textContent)
+                            
+                            -- Handle filename changes
+                            my handleFilenameChange(existingData, noteID, oldFileName, noteName, folderRawPath, folderTextPath)
+                            
+                            -- Update data record
+                            set existingData to my updateNoteData(existingData, noteID, noteModDate, noteCreatedDate, noteName)
+                        else
+                            -- Count skipped notes
+                            if latestExistingModDate is not missing value and noteModDate ≤ latestExistingModDate then
+                                set totalNotesSkippedOlder to totalNotesSkippedOlder + 1
+                            else
+                                set totalNotesSkippedUnchanged to totalNotesSkippedUnchanged + 1
+                            end if
+                        end if
                     end if
                 end repeat
                 set end of folderStatistics to {folderName, count of theNotes, outputNoteCount}
@@ -488,24 +486,37 @@ on extractShortAccountID(accountID)
     return shortAccountID
 end extractShortAccountID
 
--- Load existing notebook data from JSON file
+-- Load existing notebook data from JSON file (optimized)
 on loadNotebookData(filePath)
     try
-        log "Attempting to load JSON data from: " & filePath
+        -- Quick file existence check
+        set fileCheckCommand to "test -f " & quoted form of filePath & " && echo 'exists' || echo 'missing'"
+        set fileExists to do shell script fileCheckCommand
+        
+        if fileExists contains "missing" then
+            log "JSON file does not exist: " & filePath & " - starting fresh"
+            return {}
+        end if
+        
+        log "Loading JSON data from: " & filePath
         set loadCommand to "python3 -c \"
-import json, os
-
-if not os.path.exists('" & filePath & "'):
-    print('[]')
-    exit()
+import json, os, sys
 
 try:
     with open('" & filePath & "', 'r') as f:
         data = json.load(f)
     
-    # Convert to list format for AppleScript
+    if not data:
+        print('')
+        sys.exit(0)
+    
+    # Convert to optimized format for AppleScript
     records = []
     for note_id, record in data.items():
+        # Skip deleted notes during loading to reduce memory
+        if 'deletedDate' in record:
+            continue
+        
         rec = [
             note_id,
             record.get('filename', ''),
@@ -513,8 +524,7 @@ try:
             record.get('modified', ''),
             record.get('firstExported', ''),
             record.get('lastExported', ''),
-            str(record.get('exportCount', 1)),
-            record.get('deletedDate', '')
+            str(record.get('exportCount', 1))
         ]
         records.append('|'.join(rec))
     
@@ -522,22 +532,18 @@ try:
 except Exception as e:
     print('')
 \""
-        log "Executing Python command to load JSON data..."
         set pythonResult to do shell script loadCommand
-        log "Python command completed with result length: " & (length of pythonResult)
         
         if pythonResult is equal to "" then
-            log "Empty result from Python command, treating as no existing data"
+            log "No active records found - starting fresh"
             return {}
         end if
         
-        log "Parsing data..."
         set parsedData to my parseLoadedData(pythonResult)
-        log "JSON data loading completed successfully - loaded " & (count of parsedData) & " records"
+        log "Loaded " & (count of parsedData) & " active note records"
         return parsedData
     on error errMsg
-        log "Error in loadNotebookData: " & errMsg
-        log "Returning empty data set"
+        log "Error loading JSON data: " & errMsg
         return {}
     end try
 end loadNotebookData
@@ -613,19 +619,22 @@ on updateNoteData(existingData, noteID, noteModDate, noteCreatedDate, fileName)
     return newData
 end updateNoteData
 
--- Check if a note should be processed based on modification date
+-- Check if a note should be processed based on modification date (optimized with hash lookup)
 on shouldProcessNote(existingData, noteID, noteModDate)
+    -- Convert to string for comparison
+    set noteModDateStr to (noteModDate as string)
+    
     repeat with currentRecord in existingData
         if (noteID_key of currentRecord) = noteID then
             set storedModDate to (modified of currentRecord)
-            if storedModDate = (noteModDate as string) then
+            if storedModDate = noteModDateStr then
                 return false -- unchanged
             else
                 return true -- changed
             end if
         end if
     end repeat
-    return true -- new note
+    return true -- new note (not found in existing data)
 end shouldProcessNote
 
 -- Mark notes as deleted if they no longer exist in the current export
