@@ -4,7 +4,7 @@
 SCRIPT_START_TIME=$SECONDS
 
 # Determine the directory where the script is located
-SCRIPT_DIR=$(dirname "$0")
+SCRIPT_DIR=$(dirname $(realpath "$0"))
 
 # Set environment variable defaults and export them
 export NOTES_EXPORT_ROOT_DIR="${NOTES_EXPORT_ROOT_DIR:=$HOME/Downloads/AppleNotesExport}"
