@@ -385,7 +385,7 @@ on writeToFile(filePath, content)
         set fileObject to POSIX file filePath
         -- Try to open the file for access
         set fileDescriptor to open for access fileObject with write permission
-        write content to fileDescriptor starting at eof
+        write content to fileDescriptor starting at eof as «class utf8»
         close access fileDescriptor
     on error errMsg
         -- Log the error message
@@ -395,45 +395,29 @@ on writeToFile(filePath, content)
         close access
         do shell script "touch " & quoted form of filePath
         set fileDescriptor to open for access fileObject with write permission
-        write content to fileDescriptor starting at eof
+        write content to fileDescriptor starting at eof as «class utf8»
         close access fileDescriptor
     end try
 end writeToFile
 
--- Subroutine to generate a valid filename, replace certain characters with dashes, remove non-alphanumeric characters (except dashes), and consolidate multiple dashes
+-- Subroutine to generate a valid filename (macOS-safe), keeping diacritics/UTF chars and only removing a few invalid ones
 on makeValidFilename(fileName)
-    -- Replace only the genuinely problematic characters with dashes
-    set charactersToReplace to {"/", ":", "\\", "|", "<", ">", "\"", "'", "?", "*", "_", " ", ".", ",", tab}
-    repeat with aChar in charactersToReplace
-        set AppleScript's text item delimiters to aChar
-        set fileName to text items of fileName
-        set AppleScript's text item delimiters to "-"
-        set fileName to fileName as string
+    set validFileName to ""
+    repeat with i from 1 to length of fileName
+        set theChar to character i of fileName
+        set theCode to ASCII number of theChar
+        if theCode ≥ 32 then
+            if theChar is "/" then
+                -- Replace slashes with hyphens
+                set validFileName to validFileName & "-"
+            else if theChar is in {":", "\\"} then
+                -- Remove invalid characters
+            else
+                set validFileName to validFileName & theChar
+            end if
+        end if
     end repeat
-
-    -- Consolidate multiple dashes into a single dash
-    repeat while fileName contains "--"
-        set AppleScript's text item delimiters to "--"
-        set textItems to text items of fileName
-        set AppleScript's text item delimiters to "-"
-        set fileName to textItems as string
-    end repeat
-
-    -- Remove leading/trailing dashes
-    repeat while fileName starts with "-" and length of fileName > 1
-        set fileName to text 2 through -1 of fileName
-    end repeat
-    
-    repeat while fileName ends with "-" and length of fileName > 1
-        set fileName to text 1 through -2 of fileName
-    end repeat
-
-    -- Ensure filename isn't empty
-    if fileName is "" or fileName is "-" then
-        set fileName to "untitled"
-    end if
-
-    return fileName
+    return validFileName
 end makeValidFilename
 
 -- Subroutine to generate a filename based on the specified format
