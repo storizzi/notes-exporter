@@ -8,6 +8,7 @@ on run argv
     set envSubdirFormat to item 6 of argv
     set envUseSubdirs to item 7 of argv
     set envUpdateAll to item 8 of argv  -- NEW: update all notes flag
+    set envFoldersFilter to item 9 of argv  -- Comma-separated list of folder names to export
 
     -- Convert envRootDir to an absolute path if necessary - avoid CFURLGetFSRef was passed a URL which has no scheme warning
     if envRootDir starts with "./" then
@@ -42,6 +43,16 @@ on run argv
     end if
 
     -- Convert update all flag
+    -- Parse folders filter into a list
+    set foldersToExport to {}
+    if envFoldersFilter is not equal to "" then
+        set AppleScript's text item delimiters to ","
+        set foldersToExport to text items of envFoldersFilter
+        set AppleScript's text item delimiters to ""
+        log "Filtering to folders: " & envFoldersFilter
+    end if
+
+
     set updateAllNotes to false
     if envUpdateAll is equal to "true" then
         set updateAllNotes to true
@@ -79,9 +90,28 @@ on run argv
             set shortAccountID to my extractShortAccountID(accountID)
             set theFolders to every folder of anAccount
             repeat with aFolder in theFolders
-                set folderName to my makeValidFilename(name of aFolder)
-                set theNotes to notes of aFolder
+                set rawFolderName to name of aFolder
+                set folderName to my makeValidFilename(rawFolderName)
+                
+                -- Check if this folder should be processed (skip if filter is set and folder not in list)
+                set shouldProcessFolder to true
+                if (count of foldersToExport) > 0 then
+                    set shouldProcessFolder to false
+                    repeat with allowedFolder in foldersToExport
+                        if rawFolderName is equal to allowedFolder or folderName is equal to allowedFolder then
+                            set shouldProcessFolder to true
+                            exit repeat
+                        end if
+                    end repeat
+                    if not shouldProcessFolder then
+                        log "Skipping folder (not in filter): " & rawFolderName
+                    end if
+                end if
+                
+                -- Only process if folder passes filter
+                if shouldProcessFolder then
                 set folderNoteCount to 0
+                set theNotes to notes of aFolder
                 set outputNoteCount to 0
 
                 -- Determine the data file name based on subdirectory usage
@@ -221,6 +251,7 @@ on run argv
                 else
                     log "No notes were processed, skipping data save"
                 end if
+                end if  -- end folder filter check
             end repeat
         end repeat
     end tell

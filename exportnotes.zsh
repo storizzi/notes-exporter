@@ -21,6 +21,9 @@ export NOTES_EXPORT_CONDA_ENV="${NOTES_EXPORT_CONDA_ENV:=}"
 export NOTES_EXPORT_REMOVE_CONDA_ENV="${NOTES_EXPORT_REMOVE_CONDA_ENV:=false}"
 export NOTES_EXPORT_UPDATE_ALL="${NOTES_EXPORT_UPDATE_ALL:=false}"  # NEW: Default to incremental updates
 export NOTES_EXPORT_SET_FILE_DATES="${NOTES_EXPORT_SET_FILE_DATES:=true}"  # Set filesystem dates to match Notes.app
+export NOTES_EXPORT_FOLDERS="${NOTES_EXPORT_FOLDERS:=}"  # Comma-separated list of folder names to export (empty = all folders)
+export NOTES_EXPORT_CLEANUP="${NOTES_EXPORT_CLEANUP:=false}"  # Cleanup source directories after PDF conversion
+export NOTES_EXPORT_CONTINUOUS_PDF="${NOTES_EXPORT_CONTINUOUS_PDF:=false}"  # Export PDFs as continuous page (for handwritten notes)
 
 # Force image extraction if either Markdown, PDF, or Word conversion is enabled
 if [[ "${NOTES_EXPORT_CONVERT_TO_MARKDOWN}" == "true" || "${NOTES_EXPORT_CONVERT_TO_PDF}" == "true" || "${NOTES_EXPORT_CONVERT_TO_WORD}" == "true" ]]; then
@@ -142,6 +145,22 @@ while [[ $# -gt 0 ]]; do
             export NOTES_EXPORT_SET_FILE_DATES="$2"
             shift 2
             ;;
+        --folders|-F)
+            if [[ -z "$2" ]]; then
+                echo "Error: --folders requires an argument."
+                exit 1
+            fi
+            export NOTES_EXPORT_FOLDERS="$2"
+            shift 2
+            ;;
+        --cleanup|-C)
+            export NOTES_EXPORT_CLEANUP="true"
+            shift
+            ;;
+        --continuous-pdf|-P)
+            export NOTES_EXPORT_CONTINUOUS_PDF="true"
+            shift
+            ;;
         --uv-venv|-c)
             if [[ -z "$2" ]]; then
                 echo "Error: --conda-env requires an argument."
@@ -190,6 +209,9 @@ while [[ $# -gt 0 ]]; do
             echo "  -u, --subdir-format FORMAT         Subdirectory format (default: &account-&folder)"
             echo "  -x, --use-subdirs BOOL             Use subdirectories (default: true)"
             echo "  -D, --set-file-dates BOOL          Set filesystem dates to match Notes.app (default: true)"
+            echo "  -F, --folders FOLDERS              Comma-separated list of folder names to export (default: all)"
+            echo "  -C, --cleanup                      Cleanup source directories after PDF conversion"
+            echo "  -P, --continuous-pdf               Export PDFs as continuous page (for handwritten notes)"
             echo "  -c, --conda-env NAME               Conda environment name"
             echo "  -e, --remove-conda-env BOOL        Remove conda environment after export"
             echo "  -U, --update-all                   Force full update (disable incremental updates)"
@@ -268,8 +290,13 @@ fi
 if [[ "${NOTES_EXPORT_EXTRACT_DATA}" == "true" ]]; then
     echo "Extracting note data..."
     
+    # Log folder filter if specified
+    if [[ -n "${NOTES_EXPORT_FOLDERS}" ]]; then
+        echo "Filtering folders: ${NOTES_EXPORT_FOLDERS}"
+    fi
+    
     # Run AppleScript (simple, like the working version)
-    osascript "$SCRIPT_DIR/export_notes.scpt" "$NOTES_EXPORT_ROOT_DIR" "$NOTES_EXPORT_NOTE_LIMIT" "$NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER" "$NOTES_EXPORT_NOTE_PICK_PROBABILITY" "$NOTES_EXPORT_FILENAME_FORMAT" "$NOTES_EXPORT_SUBDIR_FORMAT" "$NOTES_EXPORT_USE_SUBDIRS" "$NOTES_EXPORT_UPDATE_ALL"
+    osascript "$SCRIPT_DIR/export_notes.scpt" "$NOTES_EXPORT_ROOT_DIR" "$NOTES_EXPORT_NOTE_LIMIT" "$NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER" "$NOTES_EXPORT_NOTE_PICK_PROBABILITY" "$NOTES_EXPORT_FILENAME_FORMAT" "$NOTES_EXPORT_SUBDIR_FORMAT" "$NOTES_EXPORT_USE_SUBDIRS" "$NOTES_EXPORT_UPDATE_ALL" "$NOTES_EXPORT_FOLDERS"
     
     # Read statistics from temporary file
     STATS_FILE="${NOTES_EXPORT_ROOT_DIR}/data/export_stats.tmp"
@@ -326,6 +353,25 @@ fi
 if [[ "${NOTES_EXPORT_SET_FILE_DATES}" == "true" ]]; then
     echo "Setting file dates to match Notes.app..."
     python3 "$SCRIPT_DIR/set_file_dates.py"
+fi
+
+# Optionally cleanup source directories after PDF conversion
+if [[ "${NOTES_EXPORT_CLEANUP}" == "true" && "${NOTES_EXPORT_CONVERT_TO_PDF}" == "true" ]]; then
+    echo "Cleaning up source directories..."
+    # Remove raw, html, and text directories since we have PDFs
+    if [[ -d "${NOTES_EXPORT_ROOT_DIR}/raw" ]]; then
+        rm -rf "${NOTES_EXPORT_ROOT_DIR}/raw"
+        echo "  Removed: raw/"
+    fi
+    if [[ -d "${NOTES_EXPORT_ROOT_DIR}/html" ]]; then
+        rm -rf "${NOTES_EXPORT_ROOT_DIR}/html"
+        echo "  Removed: html/"
+    fi
+    if [[ -d "${NOTES_EXPORT_ROOT_DIR}/text" ]]; then
+        rm -rf "${NOTES_EXPORT_ROOT_DIR}/text"
+        echo "  Removed: text/"
+    fi
+    echo "Cleanup completed - only PDF and data directories remain."
 fi
 
 # Optionally deactivate and remove the UV virtual environment
