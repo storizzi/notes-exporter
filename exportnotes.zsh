@@ -303,23 +303,23 @@ fi
 # Conditionally execute the image extraction script
 if [[ "${NOTES_EXPORT_EXTRACT_IMAGES}" == "true" ]]; then
     echo "Extracting images..."
-    python "$SCRIPT_DIR/extract_images.py"
+    python3 "$SCRIPT_DIR/extract_images.py"
 fi
 
 # Conditionally execute the conversion scripts
 if [[ "${NOTES_EXPORT_CONVERT_TO_MARKDOWN}" == "true" ]]; then
     echo "Converting to Markdown..."
-    python "$SCRIPT_DIR/convert_to_markdown.py"
+    python3 "$SCRIPT_DIR/convert_to_markdown.py"
 fi
 
 if [[ "${NOTES_EXPORT_CONVERT_TO_PDF}" == "true" ]]; then
     echo "Converting to PDF..."
-    python "$SCRIPT_DIR/convert_to_pdf.py"
+    python3 "$SCRIPT_DIR/convert_to_pdf.py"
 fi
 
 if [[ "${NOTES_EXPORT_CONVERT_TO_WORD}" == "true" ]]; then
     echo "Converting to Word..."
-    python "$SCRIPT_DIR/convert_to_word.py"
+    python3 "$SCRIPT_DIR/convert_to_word.py"
 fi
 
 # Optionally set file dates to match Notes.app
