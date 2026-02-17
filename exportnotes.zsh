@@ -209,7 +209,9 @@ while [[ $# -gt 0 ]]; do
             echo "  -u, --subdir-format FORMAT         Subdirectory format (default: &account-&folder)"
             echo "  -x, --use-subdirs BOOL             Use subdirectories (default: true)"
             echo "  -D, --set-file-dates BOOL          Set filesystem dates to match Notes.app (default: true)"
-            echo "  -F, --folders FOLDERS              Comma-separated list of folder names to export (default: all)"
+            echo "  -F, --folders FOLDERS              Comma-separated folder names (e.g., 'Work,Personal')"
+            echo "                                     Matches all folders with the given names (including nested folders)."
+            echo "                                     Spaces after commas are automatically trimmed."
             echo "  -C, --cleanup                      Cleanup source directories after PDF conversion"
             echo "  -P, --continuous-pdf               Export PDFs as continuous page (for handwritten notes)"
             echo "  -c, --conda-env NAME               Conda environment name"
@@ -224,6 +226,11 @@ while [[ $# -gt 0 ]]; do
             echo "Update Modes:"
             echo "  Default (incremental): Only processes notes modified since last export"
             echo "  --update-all: Processes all notes regardless of modification date"
+            echo ""
+            echo "Folder Filter Examples:"
+            echo "  --folders 'Scuola'                 Export only 'Scuola' folder"
+            echo "  --folders 'Work,Personal'          Export 'Work' and 'Personal' folders"
+            echo "  --folders 'My Notes,School Work'   Handles spaces in folder names"
             exit 0
             ;;
         *)

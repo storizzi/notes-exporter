@@ -47,8 +47,16 @@ on run argv
     set foldersToExport to {}
     if envFoldersFilter is not equal to "" then
         set AppleScript's text item delimiters to ","
-        set foldersToExport to text items of envFoldersFilter
+        set rawFolders to text items of envFoldersFilter
         set AppleScript's text item delimiters to ""
+        -- Trim whitespace from each folder name
+        -- Note: 'as text' conversion is required because repeat with in-loop returns references, not values
+        repeat with aFolder in rawFolders
+            set trimmedFolder to my trimText(aFolder as text)
+            if trimmedFolder is not "" then
+                set end of foldersToExport to trimmedFolder
+            end if
+        end repeat
         log "Filtering to folders: " & envFoldersFilter
     end if
 
@@ -98,7 +106,8 @@ on run argv
                 if (count of foldersToExport) > 0 then
                     set shouldProcessFolder to false
                     repeat with allowedFolder in foldersToExport
-                        if rawFolderName is equal to allowedFolder or folderName is equal to allowedFolder then
+                        set allowedFolderText to allowedFolder as text
+                        if rawFolderName is equal to allowedFolderText or folderName is equal to allowedFolderText then
                             set shouldProcessFolder to true
                             exit repeat
                         end if
@@ -902,3 +911,40 @@ on getSubdirFromPath(folderPath)
     end if
     return ""
 end getSubdirFromPath
+
+-- Helper to trim whitespace from text
+on trimText(theText)
+    set whitespaceChars to {space, tab, return, linefeed, character id 160}
+    
+    -- Trim leading whitespace
+    repeat while (count of theText) > 0
+        set firstChar to character 1 of theText
+        if firstChar is in whitespaceChars then
+            if (count of theText) > 1 then
+                set theText to text 2 thru -1 of theText
+            else
+                set theText to ""
+                exit repeat
+            end if
+        else
+            exit repeat
+        end if
+    end repeat
+    
+    -- Trim trailing whitespace
+    repeat while (count of theText) > 0
+        set lastChar to character -1 of theText
+        if lastChar is in whitespaceChars then
+            if (count of theText) > 1 then
+                set theText to text 1 thru -2 of theText
+            else
+                set theText to ""
+                exit repeat
+            end if
+        else
+            exit repeat
+        end if
+    end repeat
+    
+    return theText
+end trimText

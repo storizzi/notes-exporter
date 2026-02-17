@@ -54,8 +54,11 @@ notes will be exported to `~/Downloads/AppleNotesExport` by default.
 # export all formats (html, markdown, pdf, word)
 ./exportnotes.zsh --all
 
-# export only specific folders
+# export only specific folders (comma-separated)
 ./exportnotes.zsh --folders "Work,Personal,Projects"
+
+# export folders with spaces in names (spaces after commas are optional)
+./exportnotes.zsh --folders "My Work Notes,Personal Diary,Class Notes"
 
 # export to pdf with cleanup (removes source files after)
 ./exportnotes.zsh --convert-pdf true --cleanup
@@ -75,7 +78,7 @@ notes will be exported to `~/Downloads/AppleNotesExport` by default.
 | option | short | description |
 |--------|-------|-------------|
 | `--root-dir` | `-r` | output directory (default: `~/Downloads/AppleNotesExport`) |
-| `--folders` | `-F` | comma-separated list of folder names to export |
+| `--folders` | `-F` | comma-separated folder names to export (matches all folders with given names) |
 | `--convert-pdf` | `-p` | convert to pdf |
 | `--convert-markdown` | `-m` | convert to markdown |
 | `--convert-word` | `-w` | convert to word (docx) |
@@ -85,6 +88,13 @@ notes will be exported to `~/Downloads/AppleNotesExport` by default.
 | `--update-all` | `-U` | force full update (disable incremental) |
 | `--suppress-header-pdf` | `-s` | suppress pdf headers/footers (default: true) |
 | `--help` | `-h` | show help message |
+
+**Note on `--folders` filter:**
+- Use exact folder names as they appear in Notes.app
+- Separate multiple folders with commas (spaces after commas are automatically trimmed)
+- The filter matches all folders with the given name, including nested folders with the same name
+- Example: filtering for "Esercizi" will match all folders named "Esercizi" regardless of their parent
+- The filter matches both original folder names and sanitized names (with special characters replaced)
 
 ## 📁 output structure
 
