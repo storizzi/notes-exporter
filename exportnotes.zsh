@@ -4,7 +4,7 @@
 SCRIPT_START_TIME=$SECONDS
 
 # Determine the directory where the script is located
-SCRIPT_DIR=$(dirname $(realpath "$0"))
+SCRIPT_DIR=$(dirname "$0")
 
 # Set environment variable defaults and export them
 export NOTES_EXPORT_ROOT_DIR="${NOTES_EXPORT_ROOT_DIR:=$HOME/Downloads/AppleNotesExport}"
@@ -20,6 +20,7 @@ export NOTES_EXPORT_USE_SUBDIRS="${NOTES_EXPORT_USE_SUBDIRS:=true}"
 export NOTES_EXPORT_CONDA_ENV="${NOTES_EXPORT_CONDA_ENV:=}"
 export NOTES_EXPORT_REMOVE_CONDA_ENV="${NOTES_EXPORT_REMOVE_CONDA_ENV:=false}"
 export NOTES_EXPORT_UPDATE_ALL="${NOTES_EXPORT_UPDATE_ALL:=false}"  # NEW: Default to incremental updates
+export NOTES_EXPORT_SET_FILE_DATES="${NOTES_EXPORT_SET_FILE_DATES:=true}"  # Set filesystem dates to match Notes.app
 
 # Force image extraction if either Markdown, PDF, or Word conversion is enabled
 if [[ "${NOTES_EXPORT_CONVERT_TO_MARKDOWN}" == "true" || "${NOTES_EXPORT_CONVERT_TO_PDF}" == "true" || "${NOTES_EXPORT_CONVERT_TO_WORD}" == "true" ]]; then
@@ -133,7 +134,15 @@ while [[ $# -gt 0 ]]; do
             export NOTES_EXPORT_USE_SUBDIRS="$2"
             shift 2
             ;;
-        --conda-env|-c)
+        --set-file-dates|-D)
+            if [[ -z "$2" ]]; then
+                echo "Error: --set-file-dates requires an argument."
+                exit 1
+            fi
+            export NOTES_EXPORT_SET_FILE_DATES="$2"
+            shift 2
+            ;;
+        --uv-venv|-c)
             if [[ -z "$2" ]]; then
                 echo "Error: --conda-env requires an argument."
                 exit 1
@@ -180,6 +189,7 @@ while [[ $# -gt 0 ]]; do
             echo "  -t, --filename-format FORMAT       Filename format (default: &title-&id)"
             echo "  -u, --subdir-format FORMAT         Subdirectory format (default: &account-&folder)"
             echo "  -x, --use-subdirs BOOL             Use subdirectories (default: true)"
+            echo "  -D, --set-file-dates BOOL          Set filesystem dates to match Notes.app (default: true)"
             echo "  -c, --conda-env NAME               Conda environment name"
             echo "  -e, --remove-conda-env BOOL        Remove conda environment after export"
             echo "  -U, --update-all                   Force full update (disable incremental updates)"
@@ -312,10 +322,16 @@ if [[ "${NOTES_EXPORT_CONVERT_TO_WORD}" == "true" ]]; then
     python "$SCRIPT_DIR/convert_to_word.py"
 fi
 
-# Optionally deactivate and remove the conda environment
-if [[ "${NOTES_EXPORT_REMOVE_CONDA_ENV}" == "true" && -n "${NOTES_EXPORT_CONDA_ENV}" ]]; then
-    deactivate_conda_env
-    remove_conda_env "${NOTES_EXPORT_CONDA_ENV}"
+# Optionally set file dates to match Notes.app
+if [[ "${NOTES_EXPORT_SET_FILE_DATES}" == "true" ]]; then
+    echo "Setting file dates to match Notes.app..."
+    python3 "$SCRIPT_DIR/set_file_dates.py"
+fi
+
+# Optionally deactivate and remove the UV virtual environment
+if [[ "${NOTES_EXPORT_REMOVE_UV_VENV}" == "true" && -n "${NOTES_EXPORT_UV_VENV}" ]]; then
+    deactivate_uv_venv
+    remove_uv_venv "${NOTES_EXPORT_UV_VENV}"
 fi
 
 # Calculate and display elapsed time
