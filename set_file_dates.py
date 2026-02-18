@@ -8,30 +8,63 @@ and modification date of exported files to match the dates from Apple Notes.
 
 import json
 import os
+import re
 import sys
 import subprocess
 from datetime import datetime
 from pathlib import Path
+
+# Italian month name to number mapping
+_ITALIAN_MONTHS = {
+    'gennaio': 1, 'febbraio': 2, 'marzo': 3, 'aprile': 4,
+    'maggio': 5, 'giugno': 6, 'luglio': 7, 'agosto': 8,
+    'settembre': 9, 'ottobre': 10, 'novembre': 11, 'dicembre': 12,
+}
+
+# Italian date pattern: "mercoledì 4 febbraio 2026 alle ore 08:11:17"
+_ITALIAN_DATE_RE = re.compile(
+    r'^\w+\s+(\d{1,2})\s+(\w+)\s+(\d{4})\s+alle\s+ore\s+(\d{2}):(\d{2}):(\d{2})$'
+)
+
+
+def _parse_italian_date(date_string):
+    """Parse Italian Apple Notes date format to datetime object."""
+    m = _ITALIAN_DATE_RE.match(date_string)
+    if not m:
+        return None
+    day, month_name, year, hour, minute, second = m.groups()
+    month = _ITALIAN_MONTHS.get(month_name.lower())
+    if not month:
+        return None
+    return datetime(int(year), month, int(day), int(hour), int(minute), int(second))
 
 
 def parse_apple_date(date_string):
     """
     Parse Apple Notes date format to datetime object.
 
-    Apple Notes format: "Thursday, August 26, 2021 at 7:38:15 PM"
-    Note: Contains non-breaking space (\\u202f) before AM/PM
+    Apple Notes English format: "Thursday, August 26, 2021 at 7:38:15 PM"
+    Apple Notes Italian format: "mercoledì 4 febbraio 2026 alle ore 08:11:17"
+    Note: May contain non-breaking space (\\u202f) before AM/PM
     """
     # Remove non-breaking space
     date_string = date_string.replace('\u202f', ' ')
 
-    # Parse the date string
+    # Try English format first
     # Format: "DayOfWeek, Month Day, Year at Hour:Minute:Second AM/PM"
     try:
         dt = datetime.strptime(date_string, "%A, %B %d, %Y at %I:%M:%S %p")
         return dt
-    except ValueError as e:
-        print(f"Error parsing date '{date_string}': {e}", file=sys.stderr)
-        return None
+    except ValueError:
+        pass
+
+    # Try Italian format: "mercoledì 4 febbraio 2026 alle ore 08:11:17"
+    dt = _parse_italian_date(date_string)
+    if dt:
+        return dt
+
+    print(f"Error parsing date '{date_string}': unsupported date format", file=sys.stderr)
+    return None
 
 
 def set_file_dates(file_path, creation_date, modification_date):

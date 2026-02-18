@@ -441,7 +441,7 @@ end writeToFile
 -- Subroutine to generate a valid filename, replace certain characters with dashes, remove non-alphanumeric characters (except dashes), and consolidate multiple dashes
 on makeValidFilename(fileName)
     -- Replace only the genuinely problematic characters with dashes
-    set charactersToReplace to {"/", ":", "\\", "|", "<", ">", "\"", "'", "?", "*", "_", " ", ".", ",", tab}
+    set charactersToReplace to {"/", ":", "\\", "|", "<", ">", "\"", "'", "?", "*", "_", ".", ",", tab}
     repeat with aChar in charactersToReplace
         set AppleScript's text item delimiters to aChar
         set fileName to text items of fileName
