@@ -1,10 +1,14 @@
 # Apple Notes Export Tool <!-- omit from toc -->
 
+**Version 1.2.0**
+
 <figure style="float: right; margin-left: 10px;">
     <img src="notes-exporter.jpg" alt="Notes Exporter" width="200">
 </figure>
 
 This tool facilitates the export of Apple Notes into various formats including raw HTML, processed HTML (with local attachments), Plain Text, Markdown, PDF, and Word (DOCX) with images and most formatting left intact.
+
+**Thanks to [@sulkaharo](https://github.com/sulkaharo) for performance optimizations and feature improvements!**
 
 You can use it either as a basic backup or as a conversion tool - e.g. the Markdown format could be used in a note-taking tool like Obsidian which uses Markdown as standard.
 
@@ -146,6 +150,7 @@ By default, the script performs an **incremental export**, which is significantl
 * If a note is renamed, the script automatically cleans up the old files and their attachments to prevent orphaned files.
 * Extract images into an `attachments` sub-folder. The image filename is based on the note's filename (e.g., `My-Note-4159-attachment-001.png`).
 * Not convert notes to Markdown, PDF, or Word unless specified.
+* **Excludes deleted records from memory** for better performance (configurable with `--include-deleted`).
 
 ### Update Modes
 
@@ -180,16 +185,82 @@ Export notes with default settings (runs an incremental backup to `~/Downloads/A
 exportnotes.zsh
 ```
 
-Force a full re-export of all notes, disabling the incremental update:
+Force a full re-export of all notes, disabling the incremental update (boolean flag form):
 
 ```bash
 exportnotes.zsh --update-all
+```
+
+Or using explicit value form (useful for automation):
+
+```bash
+exportnotes.zsh --update-all true
+```
+
+Export notes including deleted records (boolean flag form):
+
+```bash
+exportnotes.zsh --include-deleted
+```
+
+Or using explicit value form:
+
+```bash
+exportnotes.zsh --include-deleted true
 ```
 
 Export to all formats (HTML, Text, Markdown, PDF, Word) and extract images:
 
 ```bash
 exportnotes.zsh --all
+```
+
+Convert notes to Markdown using boolean flag form:
+
+```bash
+exportnotes.zsh --convert-markdown
+```
+
+Or using explicit value form:
+
+```bash
+exportnotes.zsh --convert-markdown true
+```
+
+Convert notes to PDF using boolean flag form:
+
+```bash
+exportnotes.zsh --convert-pdf
+```
+
+Or using explicit value form:
+
+```bash
+exportnotes.zsh --convert-pdf true
+```
+
+Convert notes to Word using boolean flag form:
+
+```bash
+exportnotes.zsh --convert-word
+```
+
+Or using explicit value form:
+
+```bash
+exportnotes.zsh --convert-word true
+```
+
+Remove conda environment after export using boolean flag form:
+
+```bash
+exportnotes.zsh --conda-env exportnotes --remove-conda-env
+```
+
+Or using explicit value form:
+
+```bash
+exportnotes.zsh --conda-env exportnotes --remove-conda-env true
 ```
 
 Export notes with default settings in a python conda environment called `notesexport`, auto-creating and activating the environment if it doesn't exist, and auto-installing the required pip dependencies:
@@ -243,10 +314,13 @@ exportnotes.zsh --filename-format "&account-&folder-&id" --use-subdirs false
 * `--suppress-header-pdf` or `-s`: Suppress headers and footers in PDF exports. Set to `true` or `false`. Defaults to `true`.
 * `--extract-data` or `-d`: Extract data from Apple Notes. Set to `true` or `false`. Defaults to `true`.
 * `--extract-images` or `-i`: Extract images from notes. Set to `true` or `false`. Forced to `true` if converting to other formats. Defaults to `true`.
-* `--convert-markdown` or `-m`: Convert notes to Markdown. Set to `true` or `false`. Defaults to `false`.
-* `--convert-pdf` or `-p`: Convert notes to PDF. Set to `true` or `false`. Defaults to `false`.
-* `--convert-word` or `-w`: Convert notes to Word (DOCX). Set to `true` or `false`. Defaults to `false`.
-* `--update-all` or `-U`: Force a full update, disabling the default incremental export.
+* `--convert-markdown` or `-m`: Convert notes to Markdown. Defaults to `false`. Accepts both boolean flag form (e.g., `--convert-markdown`) and explicit value form (e.g., `--convert-markdown true` or `--convert-markdown false`).
+* `--convert-pdf` or `-p`: Convert notes to PDF. Defaults to `false`. Accepts both boolean flag form (e.g., `--convert-pdf`) and explicit value form (e.g., `--convert-pdf true` or `--convert-pdf false`).
+* `--convert-word` or `-w`: Convert notes to Word (DOCX). Defaults to `false`. Accepts both boolean flag form (e.g., `--convert-word`) and explicit value form (e.g., `--convert-word true` or `--convert-word false`).
+* `--update-all` or `-U`: Force a full update, disabling the default incremental export. Accepts both boolean flag form (e.g., `--update-all`) and explicit value form (e.g., `--update-all true` or `--update-all false`).
+* `--include-deleted` or `-I`: Include deleted records in the export. Defaults to `false` (excludes deleted records for better performance). Use this flag if you need to track deleted notes. Accepts both boolean flag form (e.g., `--include-deleted`) and explicit value form (e.g., `--include-deleted true` or `--include-deleted false`).
+* `--remove-conda-env` or `-e`: Remove the specified Conda environment after the script runs. Defaults to `false`. Accepts both boolean flag form (e.g., `--remove-conda-env`) and explicit value form (e.g., `--remove-conda-env true` or `--remove-conda-env false`).
+* `--set-file-dates` or `-D`: Set filesystem creation and modification dates on exported files to match the original Apple Notes dates. Useful for tools that read timestamps from the filesystem (e.g., UpNote). Defaults to `false`. Requires macOS; uses `SetFile` from Xcode Command Line Tools for creation dates. Accepts both boolean flag form (e.g., `--set-file-dates`) and explicit value form (e.g., `--set-file-dates true`).
 * `--all-formats` or `--all` or `-a`: A shortcut to enable all conversions (Markdown, PDF, Word) and image extraction.
 * `--filename-format` or `-t`: Format for filenames. Default is `&title-&id`. Placeholders: `&title`, `&id`, `&account`, `&folder`, `&accountid`, `&shortaccountid`.
 * `--subdir-format` or `-u`: Format for subdirectories. Default is `&account-&folder`.
@@ -263,6 +337,7 @@ You can also use environment variables to set defaults, which can be overridden 
 
 * `NOTES_EXPORT_ROOT_DIR`: Root directory for exports. Default: `$HOME/Downloads/AppleNotesExport`.
 * `NOTES_EXPORT_UPDATE_ALL`: Set to `true` to disable incremental updates and force a full export. Default: `false`.
+* `NOTES_EXPORT_INCLUDE_DELETED`: Set to `true` to include deleted records in the export. Default: `false` (excludes deleted records for better performance).
 * `NOTES_EXPORT_SUPPRESS_CHROME_HEADER_PDF`: `true` or `false` to control PDF headers.
 * `NOTES_EXPORT_CONVERT_TO_MARKDOWN`: `true` to enable Markdown conversion.
 * `NOTES_EXPORT_CONVERT_TO_PDF`: `true` to enable PDF conversion.
@@ -275,6 +350,7 @@ You can also use environment variables to set defaults, which can be overridden 
 * `NOTES_EXPORT_FILENAME_FORMAT`: Format for filenames. Default is `&title-&id`. Placeholders are the same as the command-line option.
 * `NOTES_EXPORT_SUBDIR_FORMAT`: Format for subdirectories. Default is `&account-&folder`.
 * `NOTES_EXPORT_USE_SUBDIRS`: Set to `false` to keep all files in a single directory. Default is `true`.
+* `NOTES_EXPORT_SET_FILE_DATES`: Set to `true` to set filesystem dates on exported files to match Apple Notes dates. Default is `false`.
 * `NOTES_EXPORT_CONDA_ENV`: Specifies the Conda environment to use.
 * `NOTES_EXPORT_REMOVE_CONDA_ENV`: Remove the specified Conda environment after the script runs. Default is `false`.
 
@@ -439,4 +515,4 @@ Sample tests have been introduced to kick off unit testing on the tool. To run t
 tests/test.zsh
 ```
 
-which kicks off pytest in verbos mode, writing the results to `test_results.txt` in the tests directory.
+which kicks off pytest in verbose mode, writing the results to `test_results.txt` in the tests directory.

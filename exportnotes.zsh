@@ -19,7 +19,9 @@ export NOTES_EXPORT_SUBDIR_FORMAT="${NOTES_EXPORT_SUBDIR_FORMAT:=&account-&folde
 export NOTES_EXPORT_USE_SUBDIRS="${NOTES_EXPORT_USE_SUBDIRS:=true}"
 export NOTES_EXPORT_CONDA_ENV="${NOTES_EXPORT_CONDA_ENV:=}"
 export NOTES_EXPORT_REMOVE_CONDA_ENV="${NOTES_EXPORT_REMOVE_CONDA_ENV:=false}"
-export NOTES_EXPORT_UPDATE_ALL="${NOTES_EXPORT_UPDATE_ALL:=false}"  # NEW: Default to incremental updates
+export NOTES_EXPORT_UPDATE_ALL="${NOTES_EXPORT_UPDATE_ALL:=false}"  # Default to incremental updates
+export NOTES_EXPORT_INCLUDE_DELETED="${NOTES_EXPORT_INCLUDE_DELETED:=false}"  # Default to excluding deleted records for performance
+export NOTES_EXPORT_SET_FILE_DATES="${NOTES_EXPORT_SET_FILE_DATES:=false}"  # Set filesystem dates to match Apple Notes dates
 
 # Force image extraction if either Markdown, PDF, or Word conversion is enabled
 if [[ "${NOTES_EXPORT_CONVERT_TO_MARKDOWN}" == "true" || "${NOTES_EXPORT_CONVERT_TO_PDF}" == "true" || "${NOTES_EXPORT_CONVERT_TO_WORD}" == "true" ]]; then
@@ -46,28 +48,43 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --convert-markdown|-m)
-            if [[ -z "$2" ]]; then
-                echo "Error: --convert-markdown requires an argument."
-                exit 1
+            # Convert notes to Markdown (default: false)
+            # Support both boolean flag and explicit value (true/false)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                # Value provided (true or false)
+                export NOTES_EXPORT_CONVERT_TO_MARKDOWN="$2"
+                shift 2
+            else
+                # No value provided, treat as boolean flag (true)
+                export NOTES_EXPORT_CONVERT_TO_MARKDOWN="true"
+                shift
             fi
-            export NOTES_EXPORT_CONVERT_TO_MARKDOWN="$2"
-            shift 2
             ;;
         --convert-pdf|-p)
-            if [[ -z "$2" ]]; then
-                echo "Error: --convert-pdf requires an argument."
-                exit 1
+            # Convert notes to PDF (default: false)
+            # Support both boolean flag and explicit value (true/false)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                # Value provided (true or false)
+                export NOTES_EXPORT_CONVERT_TO_PDF="$2"
+                shift 2
+            else
+                # No value provided, treat as boolean flag (true)
+                export NOTES_EXPORT_CONVERT_TO_PDF="true"
+                shift
             fi
-            export NOTES_EXPORT_CONVERT_TO_PDF="$2"
-            shift 2
             ;;
         --convert-word|-w)
-            if [[ -z "$2" ]]; then
-                echo "Error: --convert-word requires an argument."
-                exit 1
+            # Convert notes to Word (default: false)
+            # Support both boolean flag and explicit value (true/false)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                # Value provided (true or false)
+                export NOTES_EXPORT_CONVERT_TO_WORD="$2"
+                shift 2
+            else
+                # No value provided, treat as boolean flag (true)
+                export NOTES_EXPORT_CONVERT_TO_WORD="true"
+                shift
             fi
-            export NOTES_EXPORT_CONVERT_TO_WORD="$2"
-            shift 2
             ;;
         --extract-images|-i)
             if [[ -z "$2" ]]; then
@@ -142,17 +159,56 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --remove-conda-env|-e)
-            if [[ -z "$2" ]]; then
-                echo "Error: --remove-conda-env requires an argument."
-                exit 1
+            # Remove conda environment after export (default: false)
+            # Support both boolean flag and explicit value (true/false)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                # Value provided (true or false)
+                export NOTES_EXPORT_REMOVE_CONDA_ENV="$2"
+                shift 2
+            else
+                # No value provided, treat as boolean flag (true)
+                export NOTES_EXPORT_REMOVE_CONDA_ENV="true"
+                shift
             fi
-            export NOTES_EXPORT_REMOVE_CONDA_ENV="$2"
-            shift 2
             ;;
         --update-all|-U)
-            # NEW: Force full update of all notes (disable incremental updates)
-            export NOTES_EXPORT_UPDATE_ALL="true"
-            shift
+            # Force full update of all notes (disable incremental updates)
+            # Support both boolean flag and explicit value (true/false)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                # Value provided (true or false)
+                export NOTES_EXPORT_UPDATE_ALL="$2"
+                shift 2
+            else
+                # No value provided, treat as boolean flag (true)
+                export NOTES_EXPORT_UPDATE_ALL="true"
+                shift
+            fi
+            ;;
+        --include-deleted|-I)
+            # Include deleted records in export (default: false for performance)
+            # Support both boolean flag and explicit value (true/false)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                # Value provided (true or false)
+                export NOTES_EXPORT_INCLUDE_DELETED="$2"
+                shift 2
+            else
+                # No value provided, treat as boolean flag (true)
+                export NOTES_EXPORT_INCLUDE_DELETED="true"
+                shift
+            fi
+            ;;
+        --set-file-dates|-D)
+            # Set filesystem dates to match Apple Notes dates (default: false)
+            # Support both boolean flag and explicit value (true/false)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                # Value provided (true or false)
+                export NOTES_EXPORT_SET_FILE_DATES="$2"
+                shift 2
+            else
+                # No value provided, treat as boolean flag (true)
+                export NOTES_EXPORT_SET_FILE_DATES="true"
+                shift
+            fi
             ;;
         --all-formats|--all|-a)
             export NOTES_EXPORT_CONVERT_TO_MARKDOWN="true"
@@ -170,8 +226,11 @@ while [[ $# -gt 0 ]]; do
             echo "  -r, --root-dir DIR                Root directory for exports (default: ~/Downloads/AppleNotesExport)"
             echo "  -s, --suppress-header-pdf BOOL    Suppress Chrome header in PDF (default: true)"
             echo "  -m, --convert-markdown BOOL       Convert to Markdown (default: false)"
+            echo "                                    Accepts boolean flag or true/false value"
             echo "  -p, --convert-pdf BOOL             Convert to PDF (default: false)"
+            echo "                                    Accepts boolean flag or true/false value"
             echo "  -w, --convert-word BOOL            Convert to Word (default: false)"
+            echo "                                    Accepts boolean flag or true/false value"
             echo "  -i, --extract-images BOOL          Extract images (default: true)"
             echo "  -d, --extract-data BOOL            Extract note data (default: true)"
             echo "  -n, --note-limit NUM               Limit total notes exported"
@@ -182,16 +241,27 @@ while [[ $# -gt 0 ]]; do
             echo "  -x, --use-subdirs BOOL             Use subdirectories (default: true)"
             echo "  -c, --conda-env NAME               Conda environment name"
             echo "  -e, --remove-conda-env BOOL        Remove conda environment after export"
+            echo "                                    Accepts boolean flag or true/false value"
             echo "  -U, --update-all                   Force full update (disable incremental updates)"
+            echo "                                    Accepts boolean flag or true/false value"
+            echo "  -I, --include-deleted              Include deleted records in export (default: false)"
+            echo "                                    Accepts boolean flag or true/false value"
+            echo "  -D, --set-file-dates               Set filesystem dates to match Apple Notes (default: false)"
+            echo "                                    Accepts boolean flag or true/false value"
             echo "  -a, --all-formats, --all           Enable all format conversions"
             echo "  -h, --help                         Show this help message"
             echo ""
             echo "Environment Variables:"
             echo "  NOTES_EXPORT_UPDATE_ALL            Set to 'true' to disable incremental updates (default: false)"
+            echo "  NOTES_EXPORT_INCLUDE_DELETED       Set to 'true' to include deleted records (default: false)"
             echo ""
             echo "Update Modes:"
             echo "  Default (incremental): Only processes notes modified since last export"
             echo "  --update-all: Processes all notes regardless of modification date"
+            echo ""
+            echo "Deleted Records:"
+            echo "  Default: Excludes deleted records for better performance"
+            echo "  --include-deleted: Includes deleted records (useful for tracking deletions)"
             exit 0
             ;;
         *)
@@ -259,7 +329,7 @@ if [[ "${NOTES_EXPORT_EXTRACT_DATA}" == "true" ]]; then
     echo "Extracting note data..."
     
     # Run AppleScript (simple, like the working version)
-    osascript "$SCRIPT_DIR/export_notes.scpt" "$NOTES_EXPORT_ROOT_DIR" "$NOTES_EXPORT_NOTE_LIMIT" "$NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER" "$NOTES_EXPORT_NOTE_PICK_PROBABILITY" "$NOTES_EXPORT_FILENAME_FORMAT" "$NOTES_EXPORT_SUBDIR_FORMAT" "$NOTES_EXPORT_USE_SUBDIRS" "$NOTES_EXPORT_UPDATE_ALL"
+    osascript "$SCRIPT_DIR/export_notes.scpt" "$NOTES_EXPORT_ROOT_DIR" "$NOTES_EXPORT_NOTE_LIMIT" "$NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER" "$NOTES_EXPORT_NOTE_PICK_PROBABILITY" "$NOTES_EXPORT_FILENAME_FORMAT" "$NOTES_EXPORT_SUBDIR_FORMAT" "$NOTES_EXPORT_USE_SUBDIRS" "$NOTES_EXPORT_UPDATE_ALL" "$NOTES_EXPORT_INCLUDE_DELETED"
     
     # Read statistics from temporary file
     STATS_FILE="${NOTES_EXPORT_ROOT_DIR}/data/export_stats.tmp"
@@ -310,6 +380,12 @@ fi
 if [[ "${NOTES_EXPORT_CONVERT_TO_WORD}" == "true" ]]; then
     echo "Converting to Word..."
     python "$SCRIPT_DIR/convert_to_word.py"
+fi
+
+# Optionally set filesystem dates to match Apple Notes dates
+if [[ "${NOTES_EXPORT_SET_FILE_DATES}" == "true" ]]; then
+    echo "Setting file dates to match Apple Notes..."
+    python "$SCRIPT_DIR/set_file_dates.py"
 fi
 
 # Optionally deactivate and remove the conda environment

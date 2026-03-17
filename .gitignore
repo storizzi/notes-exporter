@@ -5,3 +5,4 @@ exportnotes_wrapper.zsh
 logs/*
 __pycache__
 tests/.pytest_cache/
+*.code-workspace

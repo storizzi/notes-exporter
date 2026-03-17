@@ -23,7 +23,7 @@ def convert_html_to_pdf():
     print(f"Processing {len(notes_to_process)} notes for PDF conversion...")
     
     # Check suppress header setting
-    suppress_header = os.getenv('NOTES_EXPORT_SUPPRESS_CHROME_HEADER_PDF', 'false').lower() == 'true'
+    suppress_header = os.getenv('NOTES_EXPORT_SUPPRESS_CHROME_HEADER_PDF', 'true').lower() == 'true'
     print(f"Suppress header: {suppress_header}")
     
     for note in notes_to_process:
