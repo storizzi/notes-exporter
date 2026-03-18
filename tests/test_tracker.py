@@ -1,20 +1,29 @@
 import os
 from pathlib import Path
+
+import pytest
+
 import notes_export_utils as utils
 
 
+@pytest.mark.unit
+@pytest.mark.export
 def test_uses_subdirs_true(monkeypatch, tmp_path):
     monkeypatch.setenv('NOTES_EXPORT_USE_SUBDIRS', 'true')
     tracker = utils.NotesExportTracker(root_directory=str(tmp_path))
     assert tracker._uses_subdirs() is True
 
 
+@pytest.mark.unit
+@pytest.mark.export
 def test_uses_subdirs_false(monkeypatch, tmp_path):
     monkeypatch.setenv('NOTES_EXPORT_USE_SUBDIRS', 'false')
     tracker = utils.NotesExportTracker(root_directory=str(tmp_path))
     assert tracker._uses_subdirs() is False
 
 
+@pytest.mark.unit
+@pytest.mark.export
 def test_get_output_path_with_subdirs(monkeypatch, tmp_path):
     monkeypatch.setenv('NOTES_EXPORT_USE_SUBDIRS', 'true')
     tracker = utils.NotesExportTracker(root_directory=str(tmp_path))
@@ -24,6 +33,8 @@ def test_get_output_path_with_subdirs(monkeypatch, tmp_path):
     assert output.parent.is_dir()
 
 
+@pytest.mark.unit
+@pytest.mark.export
 def test_get_output_path_without_subdirs(monkeypatch, tmp_path):
     monkeypatch.setenv('NOTES_EXPORT_USE_SUBDIRS', 'false')
     tracker = utils.NotesExportTracker(root_directory=str(tmp_path))

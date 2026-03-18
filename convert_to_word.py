@@ -16,12 +16,17 @@ def convert_html_to_docx():
     
     print(f"Processing {len(notes_to_process)} notes for Word conversion...")
     
+    no_overwrite = os.getenv('NOTES_EXPORT_NO_OVERWRITE', 'false').lower() == 'true'
+
     for note in notes_to_process:
         try:
             print(f"Converting: {note['filename']} from {note['notebook']}")
-            
+
             # Get output path
             output_file = tracker.get_output_path('docx', note['notebook'], note['filename'], '.docx')
+            if no_overwrite and output_file.exists():
+                print(f"Skipping (no-overwrite): {output_file}")
+                continue
             
             # Ensure source_file is a Path object
             source_file = Path(note['source_file'])

@@ -17,11 +17,25 @@ export NOTES_EXPORT_EXTRACT_DATA="${NOTES_EXPORT_EXTRACT_DATA:=true}"
 export NOTES_EXPORT_FILENAME_FORMAT="${NOTES_EXPORT_FILENAME_FORMAT:=&title-&id}"
 export NOTES_EXPORT_SUBDIR_FORMAT="${NOTES_EXPORT_SUBDIR_FORMAT:=&account-&folder}"
 export NOTES_EXPORT_USE_SUBDIRS="${NOTES_EXPORT_USE_SUBDIRS:=true}"
-export NOTES_EXPORT_CONDA_ENV="${NOTES_EXPORT_CONDA_ENV:=}"
-export NOTES_EXPORT_REMOVE_CONDA_ENV="${NOTES_EXPORT_REMOVE_CONDA_ENV:=false}"
+export NOTES_EXPORT_VENV_DIR="${NOTES_EXPORT_VENV_DIR:=}"
+export NOTES_EXPORT_REMOVE_VENV="${NOTES_EXPORT_REMOVE_VENV:=false}"
 export NOTES_EXPORT_UPDATE_ALL="${NOTES_EXPORT_UPDATE_ALL:=false}"  # Default to incremental updates
 export NOTES_EXPORT_INCLUDE_DELETED="${NOTES_EXPORT_INCLUDE_DELETED:=false}"  # Default to excluding deleted records for performance
 export NOTES_EXPORT_SET_FILE_DATES="${NOTES_EXPORT_SET_FILE_DATES:=false}"  # Set filesystem dates to match Apple Notes dates
+export NOTES_EXPORT_FILTER_ACCOUNTS="${NOTES_EXPORT_FILTER_ACCOUNTS:=}"  # Comma-separated list of account names to include
+export NOTES_EXPORT_FILTER_FOLDERS="${NOTES_EXPORT_FILTER_FOLDERS:=}"  # Comma-separated list of folder names to include
+export NOTES_EXPORT_CLEAN="${NOTES_EXPORT_CLEAN:=false}"  # Clear output directories before export
+export NOTES_EXPORT_SYNC="${NOTES_EXPORT_SYNC:=false}"  # Run sync-back after export
+export NOTES_EXPORT_SYNC_ONLY="${NOTES_EXPORT_SYNC_ONLY:=false}"  # Run sync-back without exporting
+export NOTES_EXPORT_SYNC_DRY_RUN="${NOTES_EXPORT_SYNC_DRY_RUN:=false}"  # Show what would be synced
+export NOTES_EXPORT_CREATE_NEW="${NOTES_EXPORT_CREATE_NEW:=false}"  # Create new notes from unmatched files
+export NOTES_EXPORT_CONFLICT_STRATEGY="${NOTES_EXPORT_CONFLICT_STRATEGY:=}"  # Conflict strategy override
+export NOTES_EXPORT_NO_OVERWRITE="${NOTES_EXPORT_NO_OVERWRITE:=false}"  # Skip files that already exist
+export NOTES_EXPORT_MODIFIED_AFTER="${NOTES_EXPORT_MODIFIED_AFTER:=}"  # Only export notes modified after this date
+export NOTES_EXPORT_IMAGES_BESIDE_DOCS="${NOTES_EXPORT_IMAGES_BESIDE_DOCS:=false}"  # Put images next to docs instead of attachments/
+export NOTES_EXPORT_HTML_WRAP="${NOTES_EXPORT_HTML_WRAP:=false}"  # Wrap HTML with proper page tags
+export NOTES_EXPORT_DEDUP_IMAGES="${NOTES_EXPORT_DEDUP_IMAGES:=false}"  # Deduplicate identical images
+export NOTES_EXPORT_UPDATE_QDRANT="${NOTES_EXPORT_UPDATE_QDRANT:=false}"  # Sync notes to Qdrant vector DB
 
 # Force image extraction if either Markdown, PDF, or Word conversion is enabled
 if [[ "${NOTES_EXPORT_CONVERT_TO_MARKDOWN}" == "true" || "${NOTES_EXPORT_CONVERT_TO_PDF}" == "true" || "${NOTES_EXPORT_CONVERT_TO_WORD}" == "true" ]]; then
@@ -37,14 +51,6 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             export NOTES_EXPORT_ROOT_DIR="$2"
-            shift 2
-            ;;
-        --suppress-header-pdf|-s)
-            if [[ -z "$2" ]]; then
-                echo "Error: --suppress-header-pdf requires an argument."
-                exit 1
-            fi
-            export NOTES_EXPORT_SUPPRESS_CHROME_HEADER_PDF="$2"
             shift 2
             ;;
         --convert-markdown|-m)
@@ -87,20 +93,48 @@ while [[ $# -gt 0 ]]; do
             fi
             ;;
         --extract-images|-i)
-            if [[ -z "$2" ]]; then
-                echo "Error: --extract-images requires an argument."
-                exit 1
+            # Extract images from notes (default: true)
+            # Support both boolean flag and explicit value (true/false)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_EXTRACT_IMAGES="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_EXTRACT_IMAGES="true"
+                shift
             fi
-            export NOTES_EXPORT_EXTRACT_IMAGES="$2"
-            shift 2
             ;;
         --extract-data|-d)
-            if [[ -z "$2" ]]; then
-                echo "Error: --extract-data requires an argument."
-                exit 1
+            # Extract data from Apple Notes (default: true)
+            # Support both boolean flag and explicit value (true/false)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_EXTRACT_DATA="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_EXTRACT_DATA="true"
+                shift
             fi
-            export NOTES_EXPORT_EXTRACT_DATA="$2"
-            shift 2
+            ;;
+        --suppress-header-pdf|-s)
+            # Suppress headers/footers in PDF (default: true)
+            # Support both boolean flag and explicit value (true/false)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_SUPPRESS_CHROME_HEADER_PDF="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_SUPPRESS_CHROME_HEADER_PDF="true"
+                shift
+            fi
+            ;;
+        --use-subdirs|-x)
+            # Use subdirectories for organization (default: true)
+            # Support both boolean flag and explicit value (true/false)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_USE_SUBDIRS="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_USE_SUBDIRS="true"
+                shift
+            fi
             ;;
         --note-limit|-n)
             if [[ -z "$2" ]]; then
@@ -142,34 +176,26 @@ while [[ $# -gt 0 ]]; do
             export NOTES_EXPORT_SUBDIR_FORMAT="$2"
             shift 2
             ;;
-        --use-subdirs|-x)
-            if [[ -z "$2" ]]; then
-                echo "Error: --use-subdirs requires an argument."
-                exit 1
-            fi
-            export NOTES_EXPORT_USE_SUBDIRS="$2"
-            shift 2
-            ;;
         --conda-env|-c)
+            # Deprecated: maps to --venv-dir
             if [[ -z "$2" ]]; then
                 echo "Error: --conda-env requires an argument."
                 exit 1
             fi
-            export NOTES_EXPORT_CONDA_ENV="$2"
+            echo "Warning: --conda-env is deprecated. Mapping to --venv-dir instead."
+            export NOTES_EXPORT_VENV_DIR="$2"
             shift 2
             ;;
         --remove-conda-env|-e)
-            # Remove conda environment after export (default: false)
-            # Support both boolean flag and explicit value (true/false)
+            # Deprecated: maps to --remove-venv
             if [[ -n "$2" && "$2" != -* ]]; then
-                # Value provided (true or false)
-                export NOTES_EXPORT_REMOVE_CONDA_ENV="$2"
+                export NOTES_EXPORT_REMOVE_VENV="$2"
                 shift 2
             else
-                # No value provided, treat as boolean flag (true)
-                export NOTES_EXPORT_REMOVE_CONDA_ENV="true"
+                export NOTES_EXPORT_REMOVE_VENV="true"
                 shift
             fi
+            echo "Warning: --remove-conda-env is deprecated. Mapping to --remove-venv instead."
             ;;
         --update-all|-U)
             # Force full update of all notes (disable incremental updates)
@@ -210,6 +236,157 @@ while [[ $# -gt 0 ]]; do
                 shift
             fi
             ;;
+        --filter-accounts|-A)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                echo "Error: --filter-accounts requires a comma-separated list of account names."
+                exit 1
+            fi
+            export NOTES_EXPORT_FILTER_ACCOUNTS="$2"
+            shift 2
+            ;;
+        --filter-folders|-F)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                echo "Error: --filter-folders requires a comma-separated list of folder names."
+                exit 1
+            fi
+            export NOTES_EXPORT_FILTER_FOLDERS="$2"
+            shift 2
+            ;;
+        --clean|-C)
+            # Clear output directories before export (default: false)
+            # Support both boolean flag and explicit value (true/false)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_CLEAN="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_CLEAN="true"
+                shift
+            fi
+            ;;
+        --venv-dir|-v)
+            if [[ -z "$2" ]]; then
+                echo "Error: --venv-dir requires an argument."
+                exit 1
+            fi
+            export NOTES_EXPORT_VENV_DIR="$2"
+            shift 2
+            ;;
+        --remove-venv)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_REMOVE_VENV="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_REMOVE_VENV="true"
+                shift
+            fi
+            ;;
+        --sync|-S)
+            # Run sync-back after export (default: false)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_SYNC="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_SYNC="true"
+                shift
+            fi
+            ;;
+        --sync-only)
+            # Run sync-back without exporting first
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_SYNC_ONLY="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_SYNC_ONLY="true"
+                shift
+            fi
+            ;;
+        --sync-dry-run)
+            # Show what would be synced without doing it
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_SYNC_DRY_RUN="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_SYNC_DRY_RUN="true"
+                shift
+            fi
+            ;;
+        --create-new)
+            # Create new notes from unmatched local files
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_CREATE_NEW="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_CREATE_NEW="true"
+                shift
+            fi
+            ;;
+        --conflict)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                echo "Error: --conflict requires a strategy (abort|local|remote)."
+                exit 1
+            fi
+            export NOTES_EXPORT_CONFLICT_STRATEGY="$2"
+            shift 2
+            ;;
+        --no-overwrite|-O)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_NO_OVERWRITE="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_NO_OVERWRITE="true"
+                shift
+            fi
+            ;;
+        --modified-after)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                echo "Error: --modified-after requires a date (e.g. '2026-01-15' or 'January 15, 2026')."
+                exit 1
+            fi
+            export NOTES_EXPORT_MODIFIED_AFTER="$2"
+            shift 2
+            ;;
+        --images-beside-docs)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_IMAGES_BESIDE_DOCS="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_IMAGES_BESIDE_DOCS="true"
+                shift
+            fi
+            ;;
+        --html-wrap)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_HTML_WRAP="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_HTML_WRAP="true"
+                shift
+            fi
+            ;;
+        --dedup-images)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_DEDUP_IMAGES="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_DEDUP_IMAGES="true"
+                shift
+            fi
+            ;;
+        --update-qdrant)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_UPDATE_QDRANT="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_UPDATE_QDRANT="true"
+                shift
+            fi
+            ;;
+        --query|-Q)
+            # Run a search query against exported notes and exit
+            shift
+            python "$SCRIPT_DIR/query_notes.py" "$@"
+            exit $?
+            ;;
         --all-formats|--all|-a)
             export NOTES_EXPORT_CONVERT_TO_MARKDOWN="true"
             export NOTES_EXPORT_CONVERT_TO_PDF="true"
@@ -224,32 +401,45 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  -r, --root-dir DIR                Root directory for exports (default: ~/Downloads/AppleNotesExport)"
-            echo "  -s, --suppress-header-pdf BOOL    Suppress Chrome header in PDF (default: true)"
-            echo "  -m, --convert-markdown BOOL       Convert to Markdown (default: false)"
-            echo "                                    Accepts boolean flag or true/false value"
-            echo "  -p, --convert-pdf BOOL             Convert to PDF (default: false)"
-            echo "                                    Accepts boolean flag or true/false value"
-            echo "  -w, --convert-word BOOL            Convert to Word (default: false)"
-            echo "                                    Accepts boolean flag or true/false value"
-            echo "  -i, --extract-images BOOL          Extract images (default: true)"
-            echo "  -d, --extract-data BOOL            Extract note data (default: true)"
+            echo "  -s, --suppress-header-pdf          Suppress Chrome header in PDF (default: true)"
+            echo "  -m, --convert-markdown             Convert to Markdown (default: false)"
+            echo "  -p, --convert-pdf                  Convert to PDF (default: false)"
+            echo "  -w, --convert-word                 Convert to Word (default: false)"
+            echo "  -i, --extract-images               Extract images (default: true)"
+            echo "  -d, --extract-data                 Extract note data (default: true)"
+            echo "  -x, --use-subdirs                  Use subdirectories (default: true)"
             echo "  -n, --note-limit NUM               Limit total notes exported"
             echo "  -f, --note-limit-per-folder NUM    Limit notes per folder"
             echo "  -b, --note-pick-probability NUM    Probability (%) to pick each note (default: 100)"
             echo "  -t, --filename-format FORMAT       Filename format (default: &title-&id)"
             echo "  -u, --subdir-format FORMAT         Subdirectory format (default: &account-&folder)"
-            echo "  -x, --use-subdirs BOOL             Use subdirectories (default: true)"
-            echo "  -c, --conda-env NAME               Conda environment name"
-            echo "  -e, --remove-conda-env BOOL        Remove conda environment after export"
-            echo "                                    Accepts boolean flag or true/false value"
+            echo "  -v, --venv-dir DIR                 Virtual environment directory"
+            echo "      --remove-venv                  Remove venv after export"
+            echo "  -c, --conda-env NAME               Conda environment name (deprecated, use --venv-dir)"
+            echo "  -e, --remove-conda-env             Remove conda environment after export"
             echo "  -U, --update-all                   Force full update (disable incremental updates)"
-            echo "                                    Accepts boolean flag or true/false value"
             echo "  -I, --include-deleted              Include deleted records in export (default: false)"
-            echo "                                    Accepts boolean flag or true/false value"
             echo "  -D, --set-file-dates               Set filesystem dates to match Apple Notes (default: false)"
-            echo "                                    Accepts boolean flag or true/false value"
+            echo "  -A, --filter-accounts LIST         Only export from these accounts (comma-separated)"
+            echo "  -F, --filter-folders LIST          Only export from these folders (comma-separated)"
+            echo "  -C, --clean                        Clear output directories before export"
+            echo "  -S, --sync                         Run sync-back after export"
+            echo "      --sync-only                    Run sync-back without exporting first"
+            echo "      --sync-dry-run                 Show what would be synced without doing it"
+            echo "      --create-new                   Create new notes from unmatched local files"
+            echo "      --conflict STRATEGY            Conflict strategy: abort, local, or remote"
+            echo "  -O, --no-overwrite                 Skip files that already exist (default: false)"
+            echo "      --modified-after DATE          Only export notes modified after this date"
+            echo "      --images-beside-docs           Put images next to HTML files instead of attachments/"
+            echo "      --html-wrap                    Wrap exported HTML with proper page tags"
+            echo "      --dedup-images                 Deduplicate identical images by content hash"
+            echo "      --update-qdrant                Sync notes to Qdrant vector database for AI search"
+            echo "  -Q, --query PATTERN [opts]         Search exported notes (use --query --help for details)"
             echo "  -a, --all-formats, --all           Enable all format conversions"
             echo "  -h, --help                         Show this help message"
+            echo ""
+            echo "All boolean options accept: flag only (implies true), explicit true/false value,"
+            echo "or can be set via environment variables."
             echo ""
             echo "Environment Variables:"
             echo "  NOTES_EXPORT_UPDATE_ALL            Set to 'true' to disable incremental updates (default: false)"
@@ -272,49 +462,57 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Initialize Conda for Zsh
-eval "$(conda shell.zsh hook)"
+# ---- Virtual Environment Functions ----
 
-# Function to check if a conda environment exists
-conda_env_exists() {
-    conda info --envs | grep -q "^$1 "
+# Function to check if a venv exists
+venv_exists() {
+    [[ -d "$1" && -f "$1/bin/activate" ]]
 }
 
-# Function to create a conda environment
-create_conda_env() {
-    conda create -y -n "$1" python=3.9
-    eval "$(conda shell.zsh hook)" # Ensure conda is reinitialized
-    conda activate "$1"
+# Function to create a venv
+create_venv() {
+    local venv_dir="$1"
+    echo "Creating virtual environment: $venv_dir"
+    python3 -m venv "$venv_dir"
+    source "$venv_dir/bin/activate"
     pip install -r "$SCRIPT_DIR/requirements.txt"
 }
 
-# Function to deactivate a conda environment
-deactivate_conda_env() {
-    echo "Deactivating conda environment"
-    conda deactivate
+# Function to activate a venv
+activate_venv() {
+    local venv_dir="$1"
+    source "$venv_dir/bin/activate"
 }
 
-# Function to remove a conda environment
-remove_conda_env() {
-    local env_name="$1"
-    if conda_env_exists "$env_name"; then
-        echo "Removing conda environment: $env_name"
-        conda remove --name "$env_name" --all -y
+# Handle venv environment
+if [[ -n "${NOTES_EXPORT_VENV_DIR}" ]]; then
+    if venv_exists "${NOTES_EXPORT_VENV_DIR}"; then
+        echo "Activating existing virtual environment: ${NOTES_EXPORT_VENV_DIR}"
+        activate_venv "${NOTES_EXPORT_VENV_DIR}"
     else
-        echo "Conda environment $env_name does not exist."
+        echo "Creating and activating new virtual environment: ${NOTES_EXPORT_VENV_DIR}"
+        create_venv "${NOTES_EXPORT_VENV_DIR}"
     fi
-}
+fi
 
-# Handle conda environment
-if [[ -n "${NOTES_EXPORT_CONDA_ENV}" ]]; then
-    if conda_env_exists "${NOTES_EXPORT_CONDA_ENV}"; then
-        echo "Activating existing conda environment: ${NOTES_EXPORT_CONDA_ENV}"
-        eval "$(conda shell.zsh hook)" # Ensure conda is reinitialized
-        conda activate "${NOTES_EXPORT_CONDA_ENV}"
-    else
-        echo "Creating and activating new conda environment: ${NOTES_EXPORT_CONDA_ENV}"
-        create_conda_env "${NOTES_EXPORT_CONDA_ENV}"
-    fi
+# Optionally clean output directories before export
+if [[ "${NOTES_EXPORT_CLEAN}" == "true" ]]; then
+    echo "Cleaning output directories..."
+    for dir in raw html text md pdf docx; do
+        if [[ -d "${NOTES_EXPORT_ROOT_DIR}/${dir}" ]]; then
+            rm -rf "${NOTES_EXPORT_ROOT_DIR}/${dir}"
+            echo "  Removed ${dir}/"
+        fi
+    done
+    echo "Output directories cleaned. Data tracking files preserved."
+fi
+
+# Log filters if set
+if [[ -n "${NOTES_EXPORT_FILTER_ACCOUNTS}" ]]; then
+    echo "Filtering accounts: ${NOTES_EXPORT_FILTER_ACCOUNTS}"
+fi
+if [[ -n "${NOTES_EXPORT_FILTER_FOLDERS}" ]]; then
+    echo "Filtering folders: ${NOTES_EXPORT_FILTER_FOLDERS}"
 fi
 
 # Log the update mode being used
@@ -324,12 +522,23 @@ else
     echo "Running in INCREMENTAL UPDATE mode - only modified notes will be processed"
 fi
 
+# If --sync-only, skip the export pipeline entirely
+if [[ "${NOTES_EXPORT_SYNC_ONLY}" == "true" ]]; then
+    export NOTES_EXPORT_EXTRACT_DATA="false"
+    export NOTES_EXPORT_EXTRACT_IMAGES="false"
+    export NOTES_EXPORT_CONVERT_TO_MARKDOWN="false"
+    export NOTES_EXPORT_CONVERT_TO_PDF="false"
+    export NOTES_EXPORT_CONVERT_TO_WORD="false"
+    export NOTES_EXPORT_SET_FILE_DATES="false"
+    export NOTES_EXPORT_SYNC="true"
+fi
+
 # Conditionally execute the AppleScript for data extraction
 if [[ "${NOTES_EXPORT_EXTRACT_DATA}" == "true" ]]; then
     echo "Extracting note data..."
     
     # Run AppleScript (simple, like the working version)
-    osascript "$SCRIPT_DIR/export_notes.scpt" "$NOTES_EXPORT_ROOT_DIR" "$NOTES_EXPORT_NOTE_LIMIT" "$NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER" "$NOTES_EXPORT_NOTE_PICK_PROBABILITY" "$NOTES_EXPORT_FILENAME_FORMAT" "$NOTES_EXPORT_SUBDIR_FORMAT" "$NOTES_EXPORT_USE_SUBDIRS" "$NOTES_EXPORT_UPDATE_ALL" "$NOTES_EXPORT_INCLUDE_DELETED"
+    osascript "$SCRIPT_DIR/export_notes.scpt" "$NOTES_EXPORT_ROOT_DIR" "$NOTES_EXPORT_NOTE_LIMIT" "$NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER" "$NOTES_EXPORT_NOTE_PICK_PROBABILITY" "$NOTES_EXPORT_FILENAME_FORMAT" "$NOTES_EXPORT_SUBDIR_FORMAT" "$NOTES_EXPORT_USE_SUBDIRS" "$NOTES_EXPORT_UPDATE_ALL" "$NOTES_EXPORT_INCLUDE_DELETED" "$NOTES_EXPORT_FILTER_ACCOUNTS" "$NOTES_EXPORT_FILTER_FOLDERS" "$NOTES_EXPORT_MODIFIED_AFTER"
     
     # Read statistics from temporary file
     STATS_FILE="${NOTES_EXPORT_ROOT_DIR}/data/export_stats.tmp"
@@ -388,11 +597,68 @@ if [[ "${NOTES_EXPORT_SET_FILE_DATES}" == "true" ]]; then
     python "$SCRIPT_DIR/set_file_dates.py"
 fi
 
-# Optionally deactivate and remove the conda environment
-if [[ "${NOTES_EXPORT_REMOVE_CONDA_ENV}" == "true" && -n "${NOTES_EXPORT_CONDA_ENV}" ]]; then
-    deactivate_conda_env
-    remove_conda_env "${NOTES_EXPORT_CONDA_ENV}"
+# Sync back to Apple Notes if requested
+if [[ "${NOTES_EXPORT_SYNC}" == "true" ]]; then
+    echo "Syncing changes back to Apple Notes..."
+    SYNC_ARGS=""
+    if [[ "${NOTES_EXPORT_SYNC_DRY_RUN}" == "true" ]]; then
+        SYNC_ARGS="$SYNC_ARGS --dry-run"
+    fi
+    if [[ "${NOTES_EXPORT_CREATE_NEW}" == "true" ]]; then
+        SYNC_ARGS="$SYNC_ARGS --create-new"
+    fi
+    if [[ -n "${NOTES_EXPORT_CONFLICT_STRATEGY}" ]]; then
+        SYNC_ARGS="$SYNC_ARGS --conflict ${NOTES_EXPORT_CONFLICT_STRATEGY}"
+    fi
+    if [[ -n "${NOTES_EXPORT_FILTER_FOLDERS}" ]]; then
+        SYNC_ARGS="$SYNC_ARGS --filter-folders ${NOTES_EXPORT_FILTER_FOLDERS}"
+    fi
+    if [[ -n "${NOTES_EXPORT_FILTER_ACCOUNTS}" ]]; then
+        SYNC_ARGS="$SYNC_ARGS --filter-accounts ${NOTES_EXPORT_FILTER_ACCOUNTS}"
+    fi
+    python "$SCRIPT_DIR/sync_to_notes.py" $SYNC_ARGS
+
+    # Auto-regenerate formats after sync if settings say so
+    # Only runs when not in dry-run mode
+    if [[ "${NOTES_EXPORT_SYNC_DRY_RUN}" != "true" ]]; then
+        REGEN_ARGS=$(python3 -c "
+from sync_settings import load_settings
+settings = load_settings()
+regen = settings.get('autoRegenerate', {})
+formats = []
+if regen.get('html', False): formats.append('html')
+if regen.get('pdf', False): formats.append('pdf')
+if regen.get('word', False): formats.append('word')
+print(','.join(formats))
+" 2>/dev/null)
+        if [[ -n "$REGEN_ARGS" ]]; then
+            echo "Auto-regenerating formats after sync: $REGEN_ARGS"
+            if [[ "$REGEN_ARGS" == *"html"* ]]; then
+                python "$SCRIPT_DIR/extract_images.py"
+            fi
+            if [[ "$REGEN_ARGS" == *"pdf"* ]]; then
+                python "$SCRIPT_DIR/convert_to_pdf.py"
+            fi
+            if [[ "$REGEN_ARGS" == *"word"* ]]; then
+                python "$SCRIPT_DIR/convert_to_word.py"
+            fi
+        fi
+    fi
 fi
+
+# Sync notes to Qdrant vector database if requested
+if [[ "${NOTES_EXPORT_UPDATE_QDRANT}" == "true" ]]; then
+    echo "Syncing notes to Qdrant..."
+    python "$SCRIPT_DIR/qdrant_integration.py" sync
+fi
+
+# Optionally deactivate and remove the venv
+if [[ "${NOTES_EXPORT_REMOVE_VENV}" == "true" && -n "${NOTES_EXPORT_VENV_DIR}" ]]; then
+    echo "Removing virtual environment: ${NOTES_EXPORT_VENV_DIR}"
+    deactivate 2>/dev/null
+    rm -rf "${NOTES_EXPORT_VENV_DIR}"
+fi
+
 
 # Calculate and display elapsed time
 SCRIPT_END_TIME=$SECONDS

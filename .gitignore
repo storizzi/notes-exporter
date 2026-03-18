@@ -6,3 +6,6 @@ logs/*
 __pycache__
 tests/.pytest_cache/
 *.code-workspace
+.venv/
+*.conflict.md
+.notes-exporter-settings.json

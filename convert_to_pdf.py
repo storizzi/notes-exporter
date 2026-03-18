@@ -26,12 +26,17 @@ def convert_html_to_pdf():
     suppress_header = os.getenv('NOTES_EXPORT_SUPPRESS_CHROME_HEADER_PDF', 'true').lower() == 'true'
     print(f"Suppress header: {suppress_header}")
     
+    no_overwrite = os.getenv('NOTES_EXPORT_NO_OVERWRITE', 'false').lower() == 'true'
+
     for note in notes_to_process:
         try:
             print(f"Converting: {note['filename']} from {note['notebook']}")
-            
+
             # Get output path
             output_file = tracker.get_output_path('pdf', note['notebook'], note['filename'], '.pdf')
+            if no_overwrite and output_file.exists():
+                print(f"Skipping (no-overwrite): {output_file}")
+                continue
             
             # Prepare headless Chrome command
             cmd = [

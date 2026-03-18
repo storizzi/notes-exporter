@@ -17,17 +17,22 @@ def convert_html_to_md():
     
     print(f"Processing {len(notes_to_process)} notes for markdown conversion...")
     
+    no_overwrite = os.getenv('NOTES_EXPORT_NO_OVERWRITE', 'false').lower() == 'true'
+
     for note in notes_to_process:
         try:
             print(f"Converting: {note['filename']} from {note['notebook']}")
+
+            # Get output path (check early for no-overwrite)
+            output_file = tracker.get_output_path('md', note['notebook'], note['filename'], '.md')
+            if no_overwrite and output_file.exists():
+                print(f"Skipping (no-overwrite): {output_file}")
+                continue
 
             # Read and convert HTML to Markdown
             with open(note['source_file'], "r", encoding="utf-8") as file:
                 soup = BeautifulSoup(file, "html.parser")
                 markdown_text = md(str(soup), heading_style="ATX")
-            
-            # Get output path
-            output_file = tracker.get_output_path('md', note['notebook'], note['filename'], '.md')
             
             # Write Markdown content
             with open(output_file, "w", encoding="utf-8") as file:

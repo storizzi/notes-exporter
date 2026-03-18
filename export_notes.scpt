@@ -8,7 +8,14 @@ on run argv
     set envSubdirFormat to item 6 of argv
     set envUseSubdirs to item 7 of argv
     set envUpdateAll to item 8 of argv  -- NEW: update all notes flag
-    set envIncludeDeleted to item 9 of argv  -- NEW: include deleted records flag (default: false)
+    set envIncludeDeleted to item 9 of argv  -- include deleted records flag (default: false)
+    set envFilterAccounts to item 10 of argv  -- comma-separated account name filter
+    set envFilterFolders to item 11 of argv  -- comma-separated folder name filter
+    set envModifiedAfter to item 12 of argv  -- only export notes modified after this date
+
+    -- Parse filter lists into AppleScript lists
+    set filterAccountsList to my splitByDelimiter(envFilterAccounts, ",")
+    set filterFoldersList to my splitByDelimiter(envFilterFolders, ",")
 
     -- Convert envRootDir to an absolute path if necessary - avoid CFURLGetFSRef was passed a URL which has no scheme warning
     if envRootDir starts with "./" then
@@ -54,6 +61,25 @@ on run argv
         set includeDeleted to true
     end if
 
+    -- Parse modified-after date filter
+    set modifiedAfterDate to missing value
+    if envModifiedAfter is not equal to "" then
+        try
+            -- Try to parse the date string (supports locale-dependent formats)
+            set modifiedAfterDate to date envModifiedAfter
+            log "Filtering: only notes modified after " & (modifiedAfterDate as string)
+        on error
+            -- Try ISO format via shell date parsing
+            try
+                set parsedDateStr to do shell script "date -j -f '%Y-%m-%d' '" & envModifiedAfter & "' '+%B %d, %Y %H:%M:%S'"
+                set modifiedAfterDate to date parsedDateStr
+                log "Filtering: only notes modified after " & (modifiedAfterDate as string)
+            on error errMsg
+                log "Warning: Could not parse --modified-after date '" & envModifiedAfter & "': " & errMsg
+            end try
+        end try
+    end if
+
     set htmlDirectory to envRootDir & "html/"
     set textDirectory to envRootDir & "text/"
     set dataDirectory to envRootDir & "data/"
@@ -82,11 +108,35 @@ on run argv
         set theAccounts to every account
         repeat with anAccount in theAccounts
             set accountName to my makeValidFilename(name of anAccount)
+            set rawAccountName to name of anAccount
+
+            -- Filter accounts if filter is set
+            set accountMatchesFilter to true
+            if envFilterAccounts is not equal to "" then
+                if filterAccountsList does not contain rawAccountName and filterAccountsList does not contain accountName then
+                    set accountMatchesFilter to false
+                    log "Skipping account: " & accountName & " (not in filter)"
+                end if
+            end if
+
+            if accountMatchesFilter then
             set accountID to my extractAccountID(id of anAccount)
             set shortAccountID to my extractShortAccountID(accountID)
             set theFolders to every folder of anAccount
             repeat with aFolder in theFolders
                 set folderName to my makeValidFilename(name of aFolder)
+                set rawFolderName to name of aFolder
+
+                -- Filter folders if filter is set
+                set folderMatchesFilter to true
+                if envFilterFolders is not equal to "" then
+                    if filterFoldersList does not contain rawFolderName and filterFoldersList does not contain folderName then
+                        set folderMatchesFilter to false
+                        log "Skipping folder: " & folderName & " (not in filter)"
+                    end if
+                end if
+
+                if folderMatchesFilter then
                 set folderNoteCount to 0
                 set outputNoteCount to 0
 
@@ -162,8 +212,16 @@ on run argv
                         exit repeat
                     end if
 
+                    -- Date filter check (no Apple Events needed)
+                    set passesDateFilter to true
+                    if modifiedAfterDate is not missing value then
+                        if noteModDate ≤ modifiedAfterDate then
+                            set passesDateFilter to false
+                        end if
+                    end if
+
                     -- Random selection check (no Apple Events needed)
-                    if (random number from 1 to 100) ≤ notePickProbability then
+                    if passesDateFilter and (random number from 1 to 100) ≤ notePickProbability then
 
                         -- Log progress every 100 notes
                         if (totalNotesOverall mod 100) = 0 then
@@ -219,8 +277,11 @@ on run argv
                             -- Handle filename changes
                             my handleFilenameChange(existingData, noteID, oldFileName, noteName, folderRawPath, folderTextPath)
 
-                            -- Update data record
-                            set existingData to my updateNoteData(existingData, noteID, noteModDate, noteCreatedDate, noteName)
+                            -- Capture full note ID for sync-back
+                            set fullNoteID to item i of allFullIDs
+
+                            -- Update data record (now includes fullNoteId)
+                            set existingData to my updateNoteData(existingData, noteID, noteModDate, noteCreatedDate, noteName, fullNoteID)
                         else
                             -- Count skipped notes by reason (no Apple Events needed)
                             if latestExistingModDate is not missing value and noteModDate ≤ latestExistingModDate then
@@ -241,7 +302,9 @@ on run argv
                 else
                     log "No notes were processed, skipping data save"
                 end if
+                end if -- folderMatchesFilter
             end repeat
+            end if -- accountMatchesFilter
         end repeat
     end tell
 
@@ -553,7 +616,8 @@ try:
             record.get('firstExported', ''),
             record.get('lastExported', ''),
             str(record.get('exportCount', 1)),
-            record.get('deletedDate', '')
+            record.get('deletedDate', ''),
+            record.get('fullNoteId', '')
         ]
         records.append('|'.join(rec))
 
@@ -600,6 +664,9 @@ on parseLoadedData(dataString)
                 if (count of recordParts) ≥ 8 and (item 8 of recordParts) ≠ "" then
                     set noteRecord to noteRecord & {deletedDate:(item 8 of recordParts)}
                 end if
+                if (count of recordParts) ≥ 9 and (item 9 of recordParts) ≠ "" then
+                    set noteRecord to noteRecord & {fullNoteId:(item 9 of recordParts)}
+                end if
                 set end of recordList to noteRecord
             end if
         end if
@@ -618,18 +685,18 @@ on splitByDelimiter(textString, delimiter)
 end splitByDelimiter
 
 -- Update note data record with comprehensive metadata
-on updateNoteData(existingData, noteID, noteModDate, noteCreatedDate, fileName)
+on updateNoteData(existingData, noteID, noteModDate, noteCreatedDate, fileName, fullNoteID)
     set currentTime to (current date as string)
     set foundExisting to false
     set newData to {}
-    
+
     -- Go through existing data and update if found
     if (count of existingData) > 0 then
         repeat with i from 1 to count of existingData
             set currentRecord to item i of existingData
             if (noteID_key of currentRecord) = noteID then
                 -- Update existing record, preserve firstExported
-                set newRecord to {noteID_key:noteID, filename:fileName, created:(noteCreatedDate as string), modified:(noteModDate as string), firstExported:(firstExported of currentRecord), lastExported:currentTime, exportCount:((exportCount of currentRecord) + 1)}
+                set newRecord to {noteID_key:noteID, filename:fileName, created:(noteCreatedDate as string), modified:(noteModDate as string), firstExported:(firstExported of currentRecord), lastExported:currentTime, exportCount:((exportCount of currentRecord) + 1), fullNoteId:fullNoteID}
                 set foundExisting to true
             else
                 -- Keep existing record unchanged
@@ -638,13 +705,13 @@ on updateNoteData(existingData, noteID, noteModDate, noteCreatedDate, fileName)
             set end of newData to newRecord
         end repeat
     end if
-    
+
     -- If not found, add new record
     if not foundExisting then
-        set newRecord to {noteID_key:noteID, filename:fileName, created:(noteCreatedDate as string), modified:(noteModDate as string), firstExported:currentTime, lastExported:currentTime, exportCount:1}
+        set newRecord to {noteID_key:noteID, filename:fileName, created:(noteCreatedDate as string), modified:(noteModDate as string), firstExported:currentTime, lastExported:currentTime, exportCount:1, fullNoteId:fullNoteID}
         set end of newData to newRecord
     end if
-    
+
     return newData
 end updateNoteData
 
@@ -690,6 +757,10 @@ on markDeletedNotes(existingData, currentNoteIDs)
             
             if not alreadyDeleted then
                 set deletedRecord to {noteID_key:(noteID_key of currentRecord), filename:(filename of currentRecord), created:(created of currentRecord), modified:(modified of currentRecord), firstExported:(firstExported of currentRecord), lastExported:(lastExported of currentRecord), exportCount:(exportCount of currentRecord), deletedDate:currentTime}
+                -- Preserve fullNoteId if present
+                try
+                    set deletedRecord to deletedRecord & {fullNoteId:(fullNoteId of currentRecord)}
+                end try
                 set end of newData to deletedRecord
             else
                 -- Already marked as deleted, keep as is
@@ -758,11 +829,15 @@ for record in records:
             'lastExported': record[5],
             'exportCount': int(record[6])
         })
-        
+
         # Handle deleted date
         if len(record) >= 8 and record[7]:
             note_data['deletedDate'] = record[7]
-        
+
+        # Handle fullNoteId
+        if len(record) >= 9 and record[8]:
+            note_data['fullNoteId'] = record[8]
+
         new_data[note_id] = note_data
 
 # Also preserve any notes that exist in file but not in current export
@@ -792,8 +867,15 @@ on convertDataToString(dataRecord)
     repeat with i from 1 to count of dataRecord
         set currentRecord to item i of dataRecord
         set recordArray to "['" & (noteID_key of currentRecord) & "','" & (filename of currentRecord) & "','" & (created of currentRecord) & "','" & (modified of currentRecord) & "','" & (firstExported of currentRecord) & "','" & (lastExported of currentRecord) & "'," & (exportCount of currentRecord)
+        -- Add deletedDate field
         try
-            set recordArray to recordArray & ",'" & (deletedDate of currentRecord) & "']"
+            set recordArray to recordArray & ",'" & (deletedDate of currentRecord) & "'"
+        on error
+            set recordArray to recordArray & ",''"
+        end try
+        -- Add fullNoteId field
+        try
+            set recordArray to recordArray & ",'" & (fullNoteId of currentRecord) & "']"
         on error
             set recordArray to recordArray & ",'']"
         end try

@@ -2,3 +2,8 @@ beautifulsoup4==4.13.4
 markdownify==1.1.0
 pypandoc==1.15
 pytest
+
+# Optional: for AI search with Qdrant (--update-qdrant, --ai-search)
+# No pip install needed for Qdrant - uses REST API via stdlib
+# For local embeddings with sentence-transformers instead of Ollama:
+# sentence-transformers>=2.0.0

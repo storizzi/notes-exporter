@@ -165,6 +165,101 @@ class NotesExportTracker:
             shutil.copytree(source_attachments, output_attachments)
             print(f"Copied attachments from {source_attachments} to {output_attachments}")
 
+    def get_sync_status(self, note_info: Dict[str, Any], md_file_path) -> Dict[str, Any]:
+        """Get sync status for a note by comparing local hash and remote modification date.
+
+        Returns dict with 'local_changed' and 'remote_changed' booleans.
+        """
+        import hashlib
+        from pathlib import Path
+
+        md_path = Path(md_file_path)
+
+        # Local change detection
+        local_changed = False
+        last_hash = note_info.get("localFileHashAtLastSync", "")
+        if md_path.exists() and last_hash:
+            h = hashlib.sha256()
+            with open(md_path, "rb") as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    h.update(chunk)
+            current_hash = h.hexdigest()
+            local_changed = current_hash != last_hash
+
+        # Remote change detection
+        last_remote_mod = note_info.get("appleNotesModifiedAtLastSync", "")
+        current_remote_mod = note_info.get("modified", "")
+        remote_changed = bool(last_remote_mod and current_remote_mod
+                              and current_remote_mod != last_remote_mod)
+
+        return {"local_changed": local_changed, "remote_changed": remote_changed}
+
+    def mark_note_synced(self, json_file_path: str, note_id: str,
+                         md_file_path, new_mod_date: str, sync_source: str = "markdown"):
+        """Mark a note as synced back to Apple Notes."""
+        import hashlib
+        from datetime import datetime
+        from pathlib import Path
+
+        notebook_data = self.load_notebook_data(json_file_path)
+
+        if note_id in notebook_data:
+            md_path = Path(md_file_path)
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            # Compute current file hash
+            file_hash = ""
+            if md_path.exists():
+                h = hashlib.sha256()
+                with open(md_path, "rb") as f:
+                    for chunk in iter(lambda: f.read(8192), b""):
+                        h.update(chunk)
+                file_hash = h.hexdigest()
+
+            notebook_data[note_id]["lastSyncedToNotes"] = now
+            notebook_data[note_id]["localFileHashAtLastSync"] = file_hash
+            notebook_data[note_id]["appleNotesModifiedAtLastSync"] = new_mod_date
+            notebook_data[note_id]["syncCount"] = notebook_data[note_id].get("syncCount", 0) + 1
+            notebook_data[note_id]["syncSource"] = sync_source
+
+            self.save_notebook_data(json_file_path, notebook_data)
+
+    def find_new_local_files(self, format_dir: str = "md") -> List[Dict[str, Any]]:
+        """Find files in the format directory that don't match any tracked note."""
+        from pathlib import Path
+
+        new_files = []
+        format_root = Path(self.root_directory) / format_dir
+
+        if not format_root.exists():
+            return new_files
+
+        for json_file in self.get_all_data_files():
+            notebook_data = self.load_notebook_data(json_file)
+            folder_name = json_file.stem
+
+            known_filenames = {info.get("filename", "") for info in notebook_data.values()}
+
+            if self._uses_subdirs():
+                scan_dir = format_root / folder_name
+            else:
+                scan_dir = format_root
+
+            if not scan_dir.exists():
+                continue
+
+            for f in scan_dir.glob("*.md"):
+                if not f.name.endswith(".conflict.md") and f.stem not in known_filenames:
+                    new_files.append({
+                        "file_path": f,
+                        "filename": f.stem,
+                        "notebook": folder_name,
+                        "json_file": json_file,
+                    })
+
+        return new_files
+
+
 def get_tracker() -> NotesExportTracker:
     """Convenience function to get a tracker instance"""
     return NotesExportTracker()
