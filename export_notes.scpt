@@ -466,7 +466,8 @@ on writeToFile(filePath, content)
         set fileObject to POSIX file filePath
         -- Try to open the file for access
         set fileDescriptor to open for access fileObject with write permission
-        write content to fileDescriptor starting at eof as «class utf8»
+        set eof fileDescriptor to 0
+        write content to fileDescriptor starting at 0 as «class utf8»
         close access fileDescriptor
     on error errMsg
         -- Log the error message
@@ -476,7 +477,8 @@ on writeToFile(filePath, content)
         close access
         do shell script "touch " & quoted form of filePath
         set fileDescriptor to open for access fileObject with write permission
-        write content to fileDescriptor starting at eof as «class utf8»
+        set eof fileDescriptor to 0
+        write content to fileDescriptor starting at 0 as «class utf8»
         close access fileDescriptor
     end try
 end writeToFile
