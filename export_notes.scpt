@@ -461,23 +461,35 @@ end createDirectory
 
 -- Subroutine to write content to a file (with UTF-8 encoding support)
 on writeToFile(filePath, content)
+    -- Primary method: Foundation framework (handles large content like base64 images reliably)
     try
-        -- Convert the file path to a file object
+        set nsContent to current application's NSString's stringWithString:content
+        set writeResult to nsContent's writeToFile:filePath atomically:true encoding:(current application's NSUTF8StringEncoding) |error|:(missing value)
+        if not writeResult then
+            error "NSString writeToFile returned false"
+        end if
+        return
+    on error nsErr
+        log "Foundation write failed, trying AppleScript fallback: " & nsErr
+    end try
+    -- Fallback: AppleScript file access
+    set fileDescriptor to missing value
+    try
         set fileObject to POSIX file filePath
-        -- Try to open the file for access
-        set fileDescriptor to open for access fileObject with write permission
-        write content to fileDescriptor starting at eof as «class utf8»
-        close access fileDescriptor
-    on error errMsg
-        -- Log the error message
-        log "Error writing to file: " & errMsg
-
-        -- If the file does not exist, create it and then open for access
-        close access
         do shell script "touch " & quoted form of filePath
         set fileDescriptor to open for access fileObject with write permission
-        write content to fileDescriptor starting at eof as «class utf8»
+        set eof of fileDescriptor to 0
+        write content to fileDescriptor as «class utf8»
         close access fileDescriptor
+        set fileDescriptor to missing value
+    on error errMsg
+        log "Error writing to file: " & errMsg
+        if fileDescriptor is not missing value then
+            try
+                close access fileDescriptor
+            end try
+        end if
+        log "All write methods failed for: " & filePath
     end try
 end writeToFile
 
