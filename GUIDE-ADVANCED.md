@@ -343,7 +343,9 @@ Build one rerunnable `notes/` tree that combines the useful files for each note
 into a single folder. Each note folder contains available Markdown, processed
 HTML, raw HTML, text, copied attachments, and a `metadata.json` with Apple Notes
 IDs, folder path, filename, created/modified dates, export timestamps, and file
-manifest. A root `index.json` lists every consolidated note.
+manifest. Embedded `data:image` HTML images are extracted into the same note
+folder and rewritten to local links. A root `index.json` lists every consolidated
+note.
 
 ```bash
 ./exportnotes.zsh --convert-markdown --note-folders --extract-pdf-attachments --consolidate

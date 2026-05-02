@@ -1,8 +1,11 @@
+import base64
 import json
 import os
 import shutil
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
+
+from bs4 import BeautifulSoup
 
 from notes_export_utils import get_tracker
 
@@ -17,6 +20,59 @@ def _copy_if_exists(source: Path, target: Path) -> Optional[str]:
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, target)
     return target.name
+
+
+def _read_text(source: Path) -> Optional[str]:
+    for encoding in ("utf-8", "MacRoman", "latin-1"):
+        try:
+            return source.read_text(encoding=encoding)
+        except UnicodeDecodeError:
+            continue
+    return None
+
+
+def _copy_html_extracting_embedded_images(source: Path, target: Path, filename: str) -> tuple[Optional[str], List[str]]:
+    if not source.exists() or not source.is_file():
+        return None, []
+
+    html_content = _read_text(source)
+    if html_content is None:
+        shutil.copy2(source, target)
+        return target.name, []
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    soup = BeautifulSoup(html_content, "html.parser")
+    extracted: List[str] = []
+
+    for img_index, img_tag in enumerate(soup.find_all("img"), start=1):
+        img_src = img_tag.get("src", "")
+        if not img_src.startswith("data:image"):
+            continue
+
+        try:
+            header, image_data = img_src.split(",", 1)
+            image_format = header.split(";")[0].split("/")[1].lower()
+            if image_format == "jpeg":
+                extension = "jpeg"
+            elif image_format == "svg+xml":
+                extension = "svg"
+            else:
+                extension = image_format
+
+            image = base64.b64decode(image_data)
+        except Exception as exc:
+            print(f"Warning: Could not extract embedded image from {source}: {exc}")
+            continue
+
+        image_name = f"{filename}-attachment-{img_index:03d}.{extension}"
+        image_path = target.parent / image_name
+        if not image_path.exists():
+            image_path.write_bytes(image)
+        img_tag["src"] = f"./{image_name}"
+        extracted.append(image_name)
+
+    target.write_text(str(soup), encoding="utf-8")
+    return target.name, extracted
 
 
 def _output_path(root: Path, export_type: str, notebook: str, filename: str, extension: str) -> Path:
@@ -117,6 +173,7 @@ def consolidate_export():
             filename = note_info.get("filename", f"note-{note_id}")
             target_dir = consolidated_root / notebook / filename
             files: Dict[str, Any] = {}
+            attachments: List[str] = []
 
             md_file = _markdown_path(root, notebook, filename)
             md_copied = _copy_if_exists(md_file, target_dir / f"{filename}.md")
@@ -124,14 +181,22 @@ def consolidate_export():
                 files["markdown"] = md_copied
 
             html_file = _output_path(root, "html", notebook, filename, ".html")
-            html_copied = _copy_if_exists(html_file, target_dir / f"{filename}.html")
+            html_copied, html_embedded = _copy_html_extracting_embedded_images(
+                html_file, target_dir / f"{filename}.html", filename
+            )
             if html_copied:
                 files["html"] = html_copied
+            attachments.extend(html_embedded)
 
             raw_file = _output_path(root, "raw", notebook, filename, ".html")
-            raw_copied = _copy_if_exists(raw_file, target_dir / f"{filename}.raw.html")
+            raw_copied, raw_embedded = _copy_html_extracting_embedded_images(
+                raw_file, target_dir / f"{filename}.raw.html", filename
+            )
             if raw_copied:
                 files["rawHtml"] = raw_copied
+            for embedded in raw_embedded:
+                if embedded not in attachments:
+                    attachments.append(embedded)
 
             text_file = _output_path(root, "text", notebook, filename, ".txt")
             text_copied = _copy_if_exists(text_file, target_dir / f"{filename}.txt")
@@ -148,10 +213,9 @@ def consolidate_export():
             if docx_copied:
                 files["word"] = docx_copied
 
-            attachments = []
             for attachment in _iter_attachment_files(_note_folder(root, notebook, filename), filename):
                 copied = _copy_if_exists(attachment, target_dir / attachment.name)
-                if copied:
+                if copied and copied not in attachments:
                     attachments.append(copied)
 
             if attachments:
