@@ -135,14 +135,36 @@ def search_file(file_path: Path, pattern: re.Pattern,
     return matches
 
 
+def get_notebook_for_file(file_path: Path, tracker, format_name: str = None) -> str:
+    """Return the exported notebook path for a file, including nested folders."""
+    if not tracker._uses_subdirs():
+        return ''
+
+    root = Path(tracker.root_directory)
+    if format_name is None:
+        format_name = file_path.suffix.lstrip('.')
+        if format_name == 'txt':
+            format_name = 'text'
+
+    try:
+        relative_parent = file_path.parent.relative_to(root / format_name)
+    except ValueError:
+        return file_path.parent.name
+
+    if format_name == 'md' and tracker._uses_note_folders():
+        relative_parent = relative_parent.parent
+
+    return '' if str(relative_parent) == '.' else relative_parent.as_posix()
+
+
 def get_note_title(file_path: Path, tracker) -> str:
     """Try to get the original note title from tracking JSON."""
     # Find the matching JSON data file
-    folder_name = file_path.parent.name if tracker._uses_subdirs() else None
+    folder_name = get_notebook_for_file(file_path, tracker)
     filename_stem = file_path.stem
 
     for json_file in tracker.get_all_data_files():
-        if folder_name and json_file.stem != folder_name:
+        if folder_name and tracker.notebook_name_from_data_file(json_file) != folder_name:
             continue
         data = tracker.load_notebook_data(json_file)
         for note_id, info in data.items():
@@ -179,7 +201,7 @@ def note_has_images(file_path: Path, tracker) -> bool:
     if file_path.suffix == '.html':
         raw_dir = Path(tracker.root_directory) / 'raw'
         if tracker._uses_subdirs():
-            raw_file = raw_dir / file_path.parent.name / file_path.name
+            raw_file = raw_dir / get_notebook_for_file(file_path, tracker, 'html') / file_path.name
         else:
             raw_file = raw_dir / file_path.name
         if raw_file.exists():
@@ -203,7 +225,7 @@ def get_note_dates(file_path: Path, tracker, _cache={}) -> dict:
     if not _cache:
         for json_file in tracker.get_all_data_files():
             data = tracker.load_notebook_data(json_file)
-            folder_name = json_file.stem
+            folder_name = tracker.notebook_name_from_data_file(json_file)
             for note_id, info in data.items():
                 fn = info.get('filename', '')
                 if fn:
@@ -213,7 +235,7 @@ def get_note_dates(file_path: Path, tracker, _cache={}) -> dict:
                     }
 
     stem = file_path.stem
-    folder = file_path.parent.name if tracker._uses_subdirs() else ''
+    folder = get_notebook_for_file(file_path, tracker)
 
     # Try exact match first
     key = (folder, stem)

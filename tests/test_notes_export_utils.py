@@ -95,10 +95,18 @@ class TestNotesExportTracker:
         data_dir.mkdir()
         (data_dir / "notebook1.json").write_text("{}")
         (data_dir / "notebook2.json").write_text("{}")
+        nested_dir = data_dir / "parent"
+        nested_dir.mkdir()
+        (nested_dir / "child.json").write_text("{}")
         (data_dir / "not-json.txt").write_text("")
         files = tracker.get_all_data_files()
-        assert len(files) == 2
+        assert len(files) == 3
         assert all(f.suffix == ".json" for f in files)
+
+    def test_notebook_name_from_nested_data_file(self, tmp_path):
+        tracker = utils.NotesExportTracker(root_directory=str(tmp_path))
+        data_file = tmp_path / "data" / "iCloud-Personal" / "Travel.json"
+        assert tracker.notebook_name_from_data_file(data_file) == "iCloud-Personal/Travel"
 
     def test_get_all_data_files_no_dir(self, tmp_path):
         tracker = utils.NotesExportTracker(root_directory=str(tmp_path))

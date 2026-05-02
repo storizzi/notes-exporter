@@ -149,11 +149,11 @@ def main():
 
     total_files_updated = 0
 
-    for json_file in sorted(data_dir.glob('*.json')):
+    for json_file in sorted(data_dir.rglob('*.json')):
         if json_file.name == 'export_stats.tmp':
             continue
 
-        subdir_name = json_file.stem
+        subdir_name = json_file.relative_to(data_dir).with_suffix('').as_posix()
         files_updated = process_notebook_data(json_file, root_dir, use_subdirs, subdir_name)
         if files_updated > 0:
             print(f"  {subdir_name}: updated {files_updated} files")

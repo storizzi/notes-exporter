@@ -308,7 +308,7 @@ def extract_pdf_attachments():
     linked_count = 0
 
     for json_file in tracker.get_all_data_files():
-        folder_name = json_file.stem
+        folder_name = tracker.notebook_name_from_data_file(json_file)
         notebook_data = tracker.load_notebook_data(json_file)
 
         for note_id, note_info in notebook_data.items():

@@ -345,7 +345,7 @@ class QdrantNotesManager:
 
         for json_file in self.tracker.get_all_data_files():
             notebook_data = self.tracker.load_notebook_data(json_file)
-            notebook = json_file.stem
+            notebook = self.tracker.notebook_name_from_data_file(json_file)
 
             for note_id, note_info in notebook_data.items():
                 if "deletedDate" in note_info:

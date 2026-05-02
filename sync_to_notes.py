@@ -148,7 +148,7 @@ def find_new_local_files(tracker: NotesExportTracker) -> List[Dict[str, Any]]:
 
     for json_file in tracker.get_all_data_files():
         notebook_data = tracker.load_notebook_data(json_file)
-        folder_name = json_file.stem
+        folder_name = tracker.notebook_name_from_data_file(json_file)
 
         # Get all known filenames for this notebook
         known_filenames = set()
@@ -218,7 +218,7 @@ class SyncEngine:
         # Process existing notes
         for json_file in self.tracker.get_all_data_files():
             notebook_data = self.tracker.load_notebook_data(json_file)
-            folder_name = json_file.stem
+            folder_name = self.tracker.notebook_name_from_data_file(json_file)
 
             # Apply folder/account filters
             if folder_filter or account_filter:

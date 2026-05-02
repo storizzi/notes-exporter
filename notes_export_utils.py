@@ -60,7 +60,16 @@ class NotesExportTracker:
         if not data_path.exists():
             print(f"Warning: Data directory does not exist: {self.data_directory}")
             return []
-        return list(data_path.glob("*.json"))
+        return list(data_path.rglob("*.json"))
+
+    def notebook_name_from_data_file(self, json_file_path: Path) -> str:
+        """Return the notebook path represented by a JSON data file."""
+        data_path = Path(self.data_directory)
+        json_path = Path(json_file_path)
+        try:
+            return json_path.relative_to(data_path).with_suffix("").as_posix()
+        except ValueError:
+            return json_path.stem
     
     def load_notebook_data(self, json_file_path: str) -> Dict[str, Any]:
         """Load notebook data from JSON file"""
@@ -89,7 +98,7 @@ class NotesExportTracker:
         
         for json_file in self.get_all_data_files():
             notebook_data = self.load_notebook_data(json_file)
-            folder_name = json_file.stem
+            folder_name = self.notebook_name_from_data_file(json_file)
             
             for note_id, note_info in notebook_data.items():
                 # Skip deleted notes
@@ -275,7 +284,7 @@ class NotesExportTracker:
 
         for json_file in self.get_all_data_files():
             notebook_data = self.load_notebook_data(json_file)
-            folder_name = json_file.stem
+            folder_name = self.notebook_name_from_data_file(json_file)
 
             known_filenames = {info.get("filename", "") for info in notebook_data.values()}
 

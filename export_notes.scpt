@@ -134,15 +134,22 @@ on run argv
             if accountMatchesFilter then
             set accountID to my extractAccountID(id of anAccount)
             set shortAccountID to my extractShortAccountID(accountID)
+            set folderPathMap to {}
+            repeat with rootFolder in every folder of anAccount
+                if ((class of container of rootFolder) as string) is "account" then
+                    set folderPathMap to folderPathMap & my collectFolderPaths(rootFolder, "")
+                end if
+            end repeat
             set theFolders to every folder of anAccount
             repeat with aFolder in theFolders
-                set folderName to my makeValidFilename(name of aFolder)
+                set folderLeafName to my makeValidFilename(name of aFolder)
+                set folderName to my getFolderPath(folderPathMap, id of aFolder, folderLeafName)
                 set rawFolderName to name of aFolder
 
                 -- Filter folders if filter is set
                 set folderMatchesFilter to true
                 if envFilterFolders is not equal to "" then
-                    if filterFoldersList does not contain rawFolderName and filterFoldersList does not contain folderName then
+                    if filterFoldersList does not contain rawFolderName and filterFoldersList does not contain folderLeafName and filterFoldersList does not contain folderName then
                         set folderMatchesFilter to false
                         log "Skipping folder: " & folderName & " (not in filter)"
                     end if
@@ -531,6 +538,31 @@ on makeValidFilename(fileName)
     return fileName
 end makeValidFilename
 
+-- Build a sanitized path for each folder by traversing the Apple Notes folder tree.
+on collectFolderPaths(theFolder, parentPath)
+    set folderName to my makeValidFilename(name of theFolder)
+    if parentPath is "" then
+        set folderPath to folderName
+    else
+        set folderPath to parentPath & "/" & folderName
+    end if
+
+    set folderPaths to {{id of theFolder, folderPath}}
+    repeat with childFolder in folders of theFolder
+        set folderPaths to folderPaths & my collectFolderPaths(childFolder, folderPath)
+    end repeat
+    return folderPaths
+end collectFolderPaths
+
+on getFolderPath(folderPathMap, folderID, fallbackName)
+    repeat with folderPathRecord in folderPathMap
+        if item 1 of folderPathRecord is folderID then
+            return item 2 of folderPathRecord
+        end if
+    end repeat
+    return fallbackName
+end getFolderPath
+
 -- Subroutine to generate a filename based on the specified format
 on generateFilename(format, title, id, account, folder, accountID, shortAccountID)
     set formattedFilename to format
@@ -806,6 +838,8 @@ on saveNotebookData(filePath, dataRecord)
         set saveCommand to "python3 -c \"
 import json
 import os
+
+os.makedirs(os.path.dirname('" & filePath & "'), exist_ok=True)
 
 # Load existing data if it exists
 existing_data = {}
