@@ -560,8 +560,9 @@ on collectFolderPaths(theFolder, parentPath)
 end collectFolderPaths
 
 on getFolderPath(folderPathMap, folderID, fallbackName)
+    set folderIDText to folderID as string
     repeat with folderPathRecord in folderPathMap
-        if item 1 of folderPathRecord is folderID then
+        if (item 1 of folderPathRecord as string) is folderIDText then
             return item 2 of folderPathRecord
         end if
     end repeat
