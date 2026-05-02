@@ -193,12 +193,35 @@ class NotesExportTracker:
         
         source_attachments = source_file.parent / 'attachments'
         if source_attachments.exists():
-            if self._uses_note_folders() and output_file.suffix == '.md':
+            note_folder_mode = self._uses_note_folders() and output_file.suffix == '.md'
+            if note_folder_mode:
                 output_attachments = output_file.parent
             else:
                 output_attachments = output_file.parent / 'attachments'
+
+            attachments_to_copy = list(source_attachments.iterdir())
+            if note_folder_mode:
+                attachment_prefix = f"{output_file.stem}-attachment-"
+                attachments_to_copy = [
+                    attachment
+                    for attachment in attachments_to_copy
+                    if attachment.name.startswith(attachment_prefix)
+                ]
+
+            if not attachments_to_copy and not note_folder_mode:
+                return
+
+            if note_folder_mode and output_attachments.exists():
+                for attachment in output_attachments.iterdir():
+                    if "-attachment-" not in attachment.name:
+                        continue
+                    if attachment.is_dir():
+                        shutil.rmtree(attachment)
+                    else:
+                        attachment.unlink()
+
             if output_attachments.exists():
-                for attachment in source_attachments.iterdir():
+                for attachment in attachments_to_copy:
                     target = output_attachments / attachment.name
                     if target.exists():
                         if target.is_dir():
@@ -207,13 +230,14 @@ class NotesExportTracker:
                             target.unlink()
             else:
                 output_attachments.mkdir(parents=True, exist_ok=True)
-            for attachment in source_attachments.iterdir():
+            for attachment in attachments_to_copy:
                 target = output_attachments / attachment.name
                 if attachment.is_dir():
                     shutil.copytree(attachment, target)
                 else:
                     shutil.copy2(attachment, target)
-            print(f"Copied attachments from {source_attachments} to {output_attachments}")
+            if attachments_to_copy:
+                print(f"Copied attachments from {source_attachments} to {output_attachments}")
 
     def get_sync_status(self, note_info: Dict[str, Any], md_file_path) -> Dict[str, Any]:
         """Get sync status for a note by comparing local hash and remote modification date.

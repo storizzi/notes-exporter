@@ -144,7 +144,8 @@ class TestNotesExportTracker:
         source_dir = tmp_path / "html" / "folder"
         attachments = source_dir / "attachments"
         attachments.mkdir(parents=True)
-        (attachments / "image.png").write_bytes(b"png")
+        (attachments / "note-attachment-001.png").write_bytes(b"png")
+        (attachments / "other-note-attachment-001.png").write_bytes(b"other")
         source_file = source_dir / "note.html"
         source_file.write_text("<img />")
         output_file = tmp_path / "md" / "folder" / "note" / "note.md"
@@ -153,7 +154,8 @@ class TestNotesExportTracker:
 
         tracker.copy_attachments(source_file, output_file)
 
-        assert (output_file.parent / "image.png").read_bytes() == b"png"
+        assert (output_file.parent / "note-attachment-001.png").read_bytes() == b"png"
+        assert not (output_file.parent / "other-note-attachment-001.png").exists()
         assert not (output_file.parent / "attachments").exists()
 
 
