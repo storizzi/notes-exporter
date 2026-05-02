@@ -1,8 +1,29 @@
 import os
+import shutil
 from pathlib import Path
 from markdownify import markdownify as md
 from bs4 import BeautifulSoup
 from notes_export_utils import get_tracker
+
+
+def copy_note_sidecars(tracker, note, output_file: Path):
+    """Place source HTML and text beside Markdown in note-folder mode."""
+    if not tracker._uses_note_folders():
+        return
+
+    filename = note['filename']
+    sidecar_dir = output_file.parent
+
+    html_target = sidecar_dir / f"{filename}.html"
+    shutil.copy2(note['source_file'], html_target)
+
+    text_source = Path(tracker.root_directory) / 'text'
+    if tracker._uses_subdirs():
+        text_source = text_source / note['notebook']
+    text_source = text_source / f"{filename}.txt"
+
+    if text_source.exists():
+        shutil.copy2(text_source, sidecar_dir / f"{filename}.txt")
 
 def convert_html_to_md():
     """Convert HTML files to Markdown using JSON tracking"""
@@ -48,6 +69,9 @@ def convert_html_to_md():
                 file.write(markdown_text)
             
             print(f"Created: {output_file}")
+
+            # Keep the note bundle together in note-folder mode.
+            copy_note_sidecars(tracker, note, output_file)
             
             # Copy attachments if any
             tracker.copy_attachments(note['source_file'], output_file)
