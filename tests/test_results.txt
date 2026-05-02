@@ -137,4 +137,4 @@ tests/test_tracker.py::test_uses_subdirs_false PASSED                    [ 98%]
 tests/test_tracker.py::test_get_output_path_with_subdirs PASSED          [ 99%]
 tests/test_tracker.py::test_get_output_path_without_subdirs PASSED       [100%]
 
-===================== 131 passed, 144 deselected in 0.68s ======================
+===================== 131 passed, 144 deselected in 0.71s ======================
