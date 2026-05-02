@@ -540,23 +540,25 @@ end makeValidFilename
 
 -- Build a sanitized path for each folder by traversing the Apple Notes folder tree.
 on collectFolderPaths(theFolder, parentPath)
-    set folderName to my makeValidFilename(name of theFolder)
-    if parentPath is "" then
-        set folderPath to folderName
-    else
-        set folderPath to parentPath & "/" & folderName
-    end if
+    tell application "Notes"
+        set folderName to my makeValidFilename(name of theFolder)
+        if parentPath is "" then
+            set folderPath to folderName
+        else
+            set folderPath to parentPath & "/" & folderName
+        end if
 
-    set folderPaths to {{id of theFolder, folderPath}}
-    try
-        set childFolders to folders of theFolder
-    on error
-        set childFolders to {}
-    end try
-    repeat with childFolder in childFolders
-        set folderPaths to folderPaths & my collectFolderPaths(childFolder, folderPath)
-    end repeat
-    return folderPaths
+        set folderPaths to {{id of theFolder, folderPath}}
+        try
+            set childFolders to folders of theFolder
+        on error
+            set childFolders to {}
+        end try
+        repeat with childFolder in childFolders
+            set folderPaths to folderPaths & my collectFolderPaths(childFolder, folderPath)
+        end repeat
+        return folderPaths
+    end tell
 end collectFolderPaths
 
 on getFolderPath(folderPathMap, folderID, fallbackName)
