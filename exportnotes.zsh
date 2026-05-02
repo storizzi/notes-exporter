@@ -6,6 +6,15 @@ SCRIPT_START_TIME=$SECONDS
 # Determine the directory where the script is located
 SCRIPT_DIR=$(dirname $(realpath "$0"))
 
+if command -v python >/dev/null 2>&1; then
+    PYTHON_CMD="python"
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_CMD="python3"
+else
+    echo "Error: Python is required but neither python nor python3 was found."
+    exit 1
+fi
+
 # Set environment variable defaults and export them
 export NOTES_EXPORT_ROOT_DIR="${NOTES_EXPORT_ROOT_DIR:=$HOME/Downloads/AppleNotesExport}"
 export NOTES_EXPORT_SUPPRESS_CHROME_HEADER_PDF="${NOTES_EXPORT_SUPPRESS_CHROME_HEADER_PDF:=true}"
@@ -394,7 +403,7 @@ while [[ $# -gt 0 ]]; do
         --query|-Q)
             # Run a search query against exported notes and exit
             shift
-            python "$SCRIPT_DIR/query_notes.py" "$@"
+            "$PYTHON_CMD" "$SCRIPT_DIR/query_notes.py" "$@"
             exit $?
             ;;
         --all-formats|--all|-a)
@@ -583,34 +592,34 @@ fi
 # Conditionally execute the image extraction script
 if [[ "${NOTES_EXPORT_EXTRACT_IMAGES}" == "true" ]]; then
     echo "Extracting images..."
-    python "$SCRIPT_DIR/extract_images.py"
+    "$PYTHON_CMD" "$SCRIPT_DIR/extract_images.py"
 fi
 
 # Conditionally execute the conversion scripts
 if [[ "${NOTES_EXPORT_CONVERT_TO_MARKDOWN}" == "true" ]]; then
     echo "Converting to Markdown..."
-    python "$SCRIPT_DIR/convert_to_markdown.py"
+    "$PYTHON_CMD" "$SCRIPT_DIR/convert_to_markdown.py"
 fi
 
 if [[ "${NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS}" == "true" ]]; then
     echo "Extracting PDF attachments..."
-    python "$SCRIPT_DIR/extract_pdf_attachments.py"
+    "$PYTHON_CMD" "$SCRIPT_DIR/extract_pdf_attachments.py"
 fi
 
 if [[ "${NOTES_EXPORT_CONVERT_TO_PDF}" == "true" ]]; then
     echo "Converting to PDF..."
-    python "$SCRIPT_DIR/convert_to_pdf.py"
+    "$PYTHON_CMD" "$SCRIPT_DIR/convert_to_pdf.py"
 fi
 
 if [[ "${NOTES_EXPORT_CONVERT_TO_WORD}" == "true" ]]; then
     echo "Converting to Word..."
-    python "$SCRIPT_DIR/convert_to_word.py"
+    "$PYTHON_CMD" "$SCRIPT_DIR/convert_to_word.py"
 fi
 
 # Optionally set filesystem dates to match Apple Notes dates
 if [[ "${NOTES_EXPORT_SET_FILE_DATES}" == "true" ]]; then
     echo "Setting file dates to match Apple Notes..."
-    python "$SCRIPT_DIR/set_file_dates.py"
+    "$PYTHON_CMD" "$SCRIPT_DIR/set_file_dates.py"
 fi
 
 # Sync back to Apple Notes if requested
@@ -632,7 +641,7 @@ if [[ "${NOTES_EXPORT_SYNC}" == "true" ]]; then
     if [[ -n "${NOTES_EXPORT_FILTER_ACCOUNTS}" ]]; then
         SYNC_ARGS="$SYNC_ARGS --filter-accounts ${NOTES_EXPORT_FILTER_ACCOUNTS}"
     fi
-    python "$SCRIPT_DIR/sync_to_notes.py" $SYNC_ARGS
+    "$PYTHON_CMD" "$SCRIPT_DIR/sync_to_notes.py" $SYNC_ARGS
 
     # Auto-regenerate formats after sync if settings say so
     # Only runs when not in dry-run mode
@@ -650,13 +659,13 @@ print(','.join(formats))
         if [[ -n "$REGEN_ARGS" ]]; then
             echo "Auto-regenerating formats after sync: $REGEN_ARGS"
             if [[ "$REGEN_ARGS" == *"html"* ]]; then
-                python "$SCRIPT_DIR/extract_images.py"
+                "$PYTHON_CMD" "$SCRIPT_DIR/extract_images.py"
             fi
             if [[ "$REGEN_ARGS" == *"pdf"* ]]; then
-                python "$SCRIPT_DIR/convert_to_pdf.py"
+                "$PYTHON_CMD" "$SCRIPT_DIR/convert_to_pdf.py"
             fi
             if [[ "$REGEN_ARGS" == *"word"* ]]; then
-                python "$SCRIPT_DIR/convert_to_word.py"
+                "$PYTHON_CMD" "$SCRIPT_DIR/convert_to_word.py"
             fi
         fi
     fi
@@ -665,7 +674,7 @@ fi
 # Sync notes to Qdrant vector database if requested
 if [[ "${NOTES_EXPORT_UPDATE_QDRANT}" == "true" ]]; then
     echo "Syncing notes to Qdrant..."
-    python "$SCRIPT_DIR/qdrant_integration.py" sync
+    "$PYTHON_CMD" "$SCRIPT_DIR/qdrant_integration.py" sync
 fi
 
 # Optionally deactivate and remove the venv
