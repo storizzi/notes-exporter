@@ -548,7 +548,12 @@ on collectFolderPaths(theFolder, parentPath)
     end if
 
     set folderPaths to {{id of theFolder, folderPath}}
-    repeat with childFolder in folders of theFolder
+    try
+        set childFolders to folders of theFolder
+    on error
+        set childFolders to {}
+    end try
+    repeat with childFolder in childFolders
         set folderPaths to folderPaths & my collectFolderPaths(childFolder, folderPath)
     end repeat
     return folderPaths
