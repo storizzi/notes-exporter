@@ -37,6 +37,9 @@ pip install -r requirements.txt
 chmod +x exportnotes.zsh
 ./exportnotes.zsh --convert-markdown
 
+# Export Markdown and link original PDF attachments
+./exportnotes.zsh --convert-markdown --extract-pdf-attachments
+
 # Search your notes
 python query_notes.py "meeting notes"
 python query_notes.py --modified-within 7d -l "."
@@ -49,6 +52,7 @@ Output goes to `~/Downloads/AppleNotesExport/` by default.
 **Export** from Apple Notes to multiple formats:
 - Raw HTML, processed HTML (with extracted images), plain text
 - Markdown (for Obsidian, etc.), PDF, Word (DOCX)
+- Original PDF attachments linked from Markdown with `--extract-pdf-attachments`
 - Incremental — only re-exports changed notes (~3x faster than full export)
 
 **Search** across all exported notes:

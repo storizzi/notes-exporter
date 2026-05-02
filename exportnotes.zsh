@@ -13,6 +13,7 @@ export NOTES_EXPORT_CONVERT_TO_MARKDOWN="${NOTES_EXPORT_CONVERT_TO_MARKDOWN:=fal
 export NOTES_EXPORT_CONVERT_TO_PDF="${NOTES_EXPORT_CONVERT_TO_PDF:=false}"
 export NOTES_EXPORT_CONVERT_TO_WORD="${NOTES_EXPORT_CONVERT_TO_WORD:=false}"
 export NOTES_EXPORT_EXTRACT_IMAGES="${NOTES_EXPORT_EXTRACT_IMAGES:=true}"
+export NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS="${NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS:=false}"
 export NOTES_EXPORT_EXTRACT_DATA="${NOTES_EXPORT_EXTRACT_DATA:=true}"
 export NOTES_EXPORT_FILENAME_FORMAT="${NOTES_EXPORT_FILENAME_FORMAT:=&title-&id}"
 export NOTES_EXPORT_SUBDIR_FORMAT="${NOTES_EXPORT_SUBDIR_FORMAT:=&account-&folder}"
@@ -372,6 +373,15 @@ while [[ $# -gt 0 ]]; do
                 shift
             fi
             ;;
+        --extract-pdf-attachments)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS="true"
+                shift
+            fi
+            ;;
         --update-qdrant)
             if [[ -n "$2" && "$2" != -* ]]; then
                 export NOTES_EXPORT_UPDATE_QDRANT="$2"
@@ -433,6 +443,7 @@ while [[ $# -gt 0 ]]; do
             echo "      --images-beside-docs           Put images next to HTML files instead of attachments/"
             echo "      --html-wrap                    Wrap exported HTML with proper page tags"
             echo "      --dedup-images                 Deduplicate identical images by content hash"
+            echo "      --extract-pdf-attachments      Copy Apple Notes PDF attachments and link them from Markdown"
             echo "      --update-qdrant                Sync notes to Qdrant vector database for AI search"
             echo "  -Q, --query PATTERN [opts]         Search exported notes (use --query --help for details)"
             echo "  -a, --all-formats, --all           Enable all format conversions"
@@ -579,6 +590,11 @@ fi
 if [[ "${NOTES_EXPORT_CONVERT_TO_MARKDOWN}" == "true" ]]; then
     echo "Converting to Markdown..."
     python "$SCRIPT_DIR/convert_to_markdown.py"
+fi
+
+if [[ "${NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS}" == "true" ]]; then
+    echo "Extracting PDF attachments..."
+    python "$SCRIPT_DIR/extract_pdf_attachments.py"
 fi
 
 if [[ "${NOTES_EXPORT_CONVERT_TO_PDF}" == "true" ]]; then

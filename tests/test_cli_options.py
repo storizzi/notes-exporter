@@ -42,6 +42,7 @@ def parse_option(args: str, env_var: str) -> str:
     export NOTES_EXPORT_IMAGES_BESIDE_DOCS="false"
     export NOTES_EXPORT_HTML_WRAP="false"
     export NOTES_EXPORT_DEDUP_IMAGES="false"
+    export NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS="false"
 
     set -- {args}
 
@@ -175,6 +176,12 @@ def parse_option(args: str, env_var: str) -> str:
                 else
                     export NOTES_EXPORT_DEDUP_IMAGES="true"; shift
                 fi;;
+            --extract-pdf-attachments)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    export NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS="$2"; shift 2
+                else
+                    export NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS="true"; shift
+                fi;;
             --clean|-C)
                 if [[ -n "$2" && "$2" != -* ]]; then
                     export NOTES_EXPORT_CLEAN="$2"; shift 2
@@ -242,6 +249,7 @@ class TestBooleanFlagOptions:
         ("--images-beside-docs", "NOTES_EXPORT_IMAGES_BESIDE_DOCS"),
         ("--html-wrap", "NOTES_EXPORT_HTML_WRAP"),
         ("--dedup-images", "NOTES_EXPORT_DEDUP_IMAGES"),
+        ("--extract-pdf-attachments", "NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS"),
     ])
     def test_flag_without_value_sets_true(self, flag, env_var):
         assert parse_option(flag, env_var) == "true"
@@ -254,6 +262,7 @@ class TestBooleanFlagOptions:
         ("--update-all", "NOTES_EXPORT_UPDATE_ALL"),
         ("--set-file-dates", "NOTES_EXPORT_SET_FILE_DATES"),
         ("--clean", "NOTES_EXPORT_CLEAN"),
+        ("--extract-pdf-attachments", "NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS"),
     ])
     def test_flag_with_explicit_true(self, flag, env_var):
         assert parse_option(f"{flag} true", env_var) == "true"
@@ -264,6 +273,7 @@ class TestBooleanFlagOptions:
         ("--extract-data", "NOTES_EXPORT_EXTRACT_DATA"),
         ("--update-all", "NOTES_EXPORT_UPDATE_ALL"),
         ("--set-file-dates", "NOTES_EXPORT_SET_FILE_DATES"),
+        ("--extract-pdf-attachments", "NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS"),
     ])
     def test_flag_with_explicit_false(self, flag, env_var):
         assert parse_option(f"{flag} false", env_var) == "false"

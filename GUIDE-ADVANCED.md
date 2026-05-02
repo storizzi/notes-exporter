@@ -315,6 +315,19 @@ Place images next to HTML files instead of in `attachments/`:
 ./exportnotes.zsh --images-beside-docs
 ```
 
+### PDF Attachments
+
+Copy original Apple Notes PDF attachments into each Markdown note's `attachments/`
+folder and add a managed Markdown links block:
+
+```bash
+./exportnotes.zsh --convert-markdown --extract-pdf-attachments
+```
+
+If macOS blocks access to `~/Library/Group Containers/group.com.apple.notes`,
+grant Full Disk Access to your terminal app, or set `NOTES_EXPORT_NOTES_DATA_DIR`
+to a readable copy of that folder.
+
 ### HTML Wrapping
 
 Wrap exported HTML with proper `<!DOCTYPE>`, `<head>`, `<title>`, `<body>`:
