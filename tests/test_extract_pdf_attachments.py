@@ -22,6 +22,7 @@ def _create_notes_db(notes_dir: Path):
             ZIDENTIFIER TEXT,
             ZFILENAME TEXT,
             ZGENERATION1 TEXT,
+            ZFALLBACKPDFGENERATION TEXT,
             ZNOTE INTEGER,
             ZMEDIA INTEGER,
             ZCREATIONDATE REAL,
@@ -154,3 +155,47 @@ def test_note_folder_mode_places_pdf_beside_markdown(tmp_path, monkeypatch):
     content = md_file.read_text(encoding="utf-8")
     assert "(./Test-Note-1-pdf-001-Original-Contract.pdf)" in content
     assert not (note_dir / "attachments").exists()
+
+
+@pytest.mark.unit
+@pytest.mark.export
+def test_extracts_paper_doc_pdf_fallback(tmp_path, monkeypatch):
+    notes_dir = tmp_path / "group.com.apple.notes"
+    fallback_dir = notes_dir / "Accounts" / "ACCOUNT-1" / "FallbackPDFs" / "PAPER-1" / "GEN-PDF"
+    fallback_dir.mkdir(parents=True)
+    (fallback_dir / "FallbackPDF.pdf").write_bytes(b"%PDF-1.4 paper")
+    _create_notes_db(notes_dir)
+
+    conn = sqlite3.connect(notes_dir / "NoteStore.sqlite")
+    conn.execute(
+        """
+        INSERT INTO ZICCLOUDSYNCINGOBJECT (
+            Z_PK, Z_ENT, ZIDENTIFIER, ZFALLBACKPDFGENERATION, ZNOTE, ZCREATIONDATE, ZMODIFICATIONDATE, ZTYPEUTI
+        ) VALUES (40, 3, 'PAPER-1', 'GEN-PDF', 2, 3000, 4000, 'com.apple.paper.doc.pdf')
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    export_dir = tmp_path / "export"
+    notebook = "iCloud-Notes"
+    note_dir = export_dir / "md" / notebook / "Paper-Doc-2"
+    note_dir.mkdir(parents=True)
+    (export_dir / "data").mkdir(parents=True)
+    (export_dir / "data" / f"{notebook}.json").write_text(
+        json.dumps({"2": {"filename": "Paper-Doc-2", "lastExported": "now"}}),
+        encoding="utf-8",
+    )
+    md_file = note_dir / "Paper-Doc-2.md"
+    md_file.write_text("# Paper Doc\n", encoding="utf-8")
+
+    monkeypatch.setenv("NOTES_EXPORT_ROOT_DIR", str(export_dir))
+    monkeypatch.setenv("NOTES_EXPORT_NOTES_DATA_DIR", str(notes_dir))
+    monkeypatch.setenv("NOTES_EXPORT_USE_SUBDIRS", "true")
+    monkeypatch.setenv("NOTES_EXPORT_NOTE_FOLDERS", "true")
+
+    extract_pdf_attachments()
+
+    copied = note_dir / "Paper-Doc-2-pdf-001-Scan.pdf"
+    assert copied.read_bytes() == b"%PDF-1.4 paper"
+    assert "(./Paper-Doc-2-pdf-001-Scan.pdf)" in md_file.read_text(encoding="utf-8")

@@ -172,7 +172,7 @@ def _find_scan_pdfs(conn: sqlite3.Connection, keys: Dict[str, int], notes_dir: P
         WHERE
             Z_ENT = ?
             AND ZNOTE IS NOT NULL
-            AND ZTYPEUTI = 'com.apple.paper.doc.scan'
+            AND ZTYPEUTI IN ('com.apple.paper.doc.scan', 'com.apple.paper.doc.pdf')
         """,
         (attachment_key,),
     ).fetchall()
