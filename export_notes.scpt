@@ -12,6 +12,11 @@ on run argv
     set envFilterAccounts to item 10 of argv  -- comma-separated account name filter
     set envFilterFolders to item 11 of argv  -- comma-separated folder name filter
     set envModifiedAfter to item 12 of argv  -- only export notes modified after this date
+    if (count of argv) ≥ 13 then
+        set envExportText to item 13 of argv
+    else
+        set envExportText to "true"
+    end if
 
     -- Parse filter lists into AppleScript lists
     set filterAccountsList to my splitByDelimiter(envFilterAccounts, ",")
@@ -55,6 +60,11 @@ on run argv
         set updateAllNotes to true
     end if
 
+    set exportTextFiles to true
+    if envExportText is equal to "false" then
+        set exportTextFiles to false
+    end if
+
     -- Convert include deleted flag
     set includeDeleted to false
     if envIncludeDeleted is equal to "true" then
@@ -89,7 +99,9 @@ on run argv
     my createDirectory(rawDirectory) 
     my createDirectory(dataDirectory)
     my createDirectory(htmlDirectory)
-    my createDirectory(textDirectory)
+    if exportTextFiles then
+        my createDirectory(textDirectory)
+    end if
 
     -- Variables for statistics
     set totalNotesOutput to 0
@@ -264,15 +276,17 @@ on run argv
 
                             -- Read content only for changed notes (expensive)
                             set htmlContent to body of theNote
-                            set textContent to plaintext of theNote
 
                             -- Generate file paths
                             set noteRawPath to POSIX path of (folderRawPath & noteName & ".html")
-                            set noteTextPath to POSIX path of (folderTextPath & noteName & ".txt")
 
                             -- Save files
                             my writeToFile(noteRawPath, htmlContent)
-                            my writeToFile(noteTextPath, textContent)
+                            if exportTextFiles then
+                                set textContent to plaintext of theNote
+                                set noteTextPath to POSIX path of (folderTextPath & noteName & ".txt")
+                                my writeToFile(noteTextPath, textContent)
+                            end if
 
                             -- Handle filename changes
                             my handleFilenameChange(existingData, noteID, oldFileName, noteName, folderRawPath, folderTextPath)

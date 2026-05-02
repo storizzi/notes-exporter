@@ -119,3 +119,38 @@ def test_managed_block_is_replaced_not_duplicated(tmp_path, monkeypatch):
     content = md_file.read_text(encoding="utf-8")
     assert content.count(START_MARKER) == 1
     assert content.count("Test-Note-1-pdf-001-Original-Contract.pdf") == 2
+
+
+@pytest.mark.unit
+@pytest.mark.export
+def test_note_folder_mode_places_pdf_beside_markdown(tmp_path, monkeypatch):
+    notes_dir = tmp_path / "group.com.apple.notes"
+    media_dir = notes_dir / "Accounts" / "ACCOUNT-1" / "Media" / "MEDIA-1" / "GEN-1"
+    media_dir.mkdir(parents=True)
+    (media_dir / "Original Contract.pdf").write_bytes(b"%PDF-1.4 test")
+    _create_notes_db(notes_dir)
+
+    export_dir = tmp_path / "export"
+    notebook = "iCloud-Notes"
+    (export_dir / "data").mkdir(parents=True)
+    note_dir = export_dir / "md" / notebook / "Test-Note-1"
+    note_dir.mkdir(parents=True)
+    (export_dir / "data" / f"{notebook}.json").write_text(
+        json.dumps({"1": {"filename": "Test-Note-1", "lastExported": "now"}}),
+        encoding="utf-8",
+    )
+    md_file = note_dir / "Test-Note-1.md"
+    md_file.write_text("# Test Note\n\nBody\n", encoding="utf-8")
+
+    monkeypatch.setenv("NOTES_EXPORT_ROOT_DIR", str(export_dir))
+    monkeypatch.setenv("NOTES_EXPORT_NOTES_DATA_DIR", str(notes_dir))
+    monkeypatch.setenv("NOTES_EXPORT_USE_SUBDIRS", "true")
+    monkeypatch.setenv("NOTES_EXPORT_NOTE_FOLDERS", "true")
+
+    extract_pdf_attachments()
+
+    copied = note_dir / "Test-Note-1-pdf-001-Original-Contract.pdf"
+    assert copied.read_bytes() == b"%PDF-1.4 test"
+    content = md_file.read_text(encoding="utf-8")
+    assert "(./Test-Note-1-pdf-001-Original-Contract.pdf)" in content
+    assert not (note_dir / "attachments").exists()

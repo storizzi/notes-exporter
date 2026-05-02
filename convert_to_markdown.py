@@ -32,7 +32,16 @@ def convert_html_to_md():
             # Read and convert HTML to Markdown
             with open(note['source_file'], "r", encoding="utf-8") as file:
                 soup = BeautifulSoup(file, "html.parser")
+                if tracker._uses_note_folders():
+                    for tag in soup.find_all(["img", "a"]):
+                        attr = "src" if tag.name == "img" else "href"
+                        value = tag.get(attr)
+                        if value and value.startswith("./attachments/"):
+                            tag[attr] = "./" + value[len("./attachments/"):]
                 markdown_text = md(str(soup), heading_style="ATX")
+                if tracker._uses_note_folders():
+                    markdown_text = markdown_text.replace("](./attachments/", "](./")
+                    markdown_text = markdown_text.replace("](attachments/", "](./")
             
             # Write Markdown content
             with open(output_file, "w", encoding="utf-8") as file:

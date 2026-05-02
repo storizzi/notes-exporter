@@ -96,24 +96,38 @@ class NotesExportTracker:
                 if 'deletedDate' in note_info:
                     continue
                 
-                # Check if export is needed
                 last_exported = note_info.get('lastExported', '')
                 last_exported_to_format = note_info.get(last_exported_key, '')
-                
-                if last_exported != last_exported_to_format:
-                    filename = note_info.get('filename', f'note-{note_id}')
-                    source_path = self._get_file_path(source_folder, folder_name, filename, source_extension)
-                    
-                    if source_path.exists():
-                        notes_to_process.append({
-                            'note_id': note_id,
-                            'notebook': folder_name,
-                            'filename': filename,
-                            'source_file': source_path,
-                            'json_file': json_file,
-                            'note_info': note_info,
-                            'last_exported_key': last_exported_key
-                        })
+                filename = note_info.get('filename', f'note-{note_id}')
+                source_path = self._get_file_path(source_folder, folder_name, filename, source_extension)
+                needs_export = last_exported != last_exported_to_format
+
+                if not needs_export and export_type != 'images':
+                    extension_map = {
+                        'markdown': '.md',
+                        'pdf': '.pdf',
+                        'word': '.docx',
+                    }
+                    folder_map = {
+                        'markdown': 'md',
+                        'pdf': 'pdf',
+                        'word': 'docx',
+                    }
+                    extension = extension_map.get(export_type)
+                    folder_type = folder_map.get(export_type, export_type)
+                    if extension:
+                        needs_export = not self.get_output_path(folder_type, folder_name, filename, extension).exists()
+
+                if needs_export and source_path.exists():
+                    notes_to_process.append({
+                        'note_id': note_id,
+                        'notebook': folder_name,
+                        'filename': filename,
+                        'source_file': source_path,
+                        'json_file': json_file,
+                        'note_info': note_info,
+                        'last_exported_key': last_exported_key
+                    })
         
         return notes_to_process
     
@@ -127,6 +141,10 @@ class NotesExportTracker:
     def _uses_subdirs(self) -> bool:
         """Check if the export uses subdirectories"""
         return os.getenv('NOTES_EXPORT_USE_SUBDIRS', 'true').lower() == 'true'
+
+    def _uses_note_folders(self) -> bool:
+        """Check if each Markdown note should be placed in its own folder."""
+        return os.getenv('NOTES_EXPORT_NOTE_FOLDERS', 'false').lower() == 'true'
     
     def mark_note_exported(self, json_file_path: str, note_id: str, export_type: str):
         """Mark a note as exported to the specified format"""
@@ -143,10 +161,15 @@ class NotesExportTracker:
         """Get the output path for a converted file"""
         output_folder = os.path.join(self.root_directory, export_type)
         
-        if self._uses_subdirs():
+        if self._uses_subdirs() and export_type == 'md' and self._uses_note_folders():
+            output_path = Path(output_folder) / folder_name / filename / f"{filename}{extension}"
+        elif self._uses_subdirs():
             output_path = Path(output_folder) / folder_name / f"{filename}{extension}"
         else:
-            output_path = Path(output_folder) / f"{filename}{extension}"
+            if export_type == 'md' and self._uses_note_folders():
+                output_path = Path(output_folder) / filename / f"{filename}{extension}"
+            else:
+                output_path = Path(output_folder) / f"{filename}{extension}"
         
         # Ensure output directory exists
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -159,10 +182,26 @@ class NotesExportTracker:
         
         source_attachments = source_file.parent / 'attachments'
         if source_attachments.exists():
-            output_attachments = output_file.parent / 'attachments'
+            if self._uses_note_folders() and output_file.suffix == '.md':
+                output_attachments = output_file.parent
+            else:
+                output_attachments = output_file.parent / 'attachments'
             if output_attachments.exists():
-                shutil.rmtree(output_attachments)
-            shutil.copytree(source_attachments, output_attachments)
+                for attachment in source_attachments.iterdir():
+                    target = output_attachments / attachment.name
+                    if target.exists():
+                        if target.is_dir():
+                            shutil.rmtree(target)
+                        else:
+                            target.unlink()
+            else:
+                output_attachments.mkdir(parents=True, exist_ok=True)
+            for attachment in source_attachments.iterdir():
+                target = output_attachments / attachment.name
+                if attachment.is_dir():
+                    shutil.copytree(attachment, target)
+                else:
+                    shutil.copy2(attachment, target)
             print(f"Copied attachments from {source_attachments} to {output_attachments}")
 
     def get_sync_status(self, note_info: Dict[str, Any], md_file_path) -> Dict[str, Any]:

@@ -46,6 +46,14 @@ class TestNotesExportTracker:
         assert output == Path(tmp_path) / 'pdf' / 'note.pdf'
         assert output.parent.is_dir()
 
+    def test_get_markdown_output_path_with_note_folders(self, monkeypatch, tmp_path):
+        monkeypatch.setenv('NOTES_EXPORT_USE_SUBDIRS', 'true')
+        monkeypatch.setenv('NOTES_EXPORT_NOTE_FOLDERS', 'true')
+        tracker = utils.NotesExportTracker(root_directory=str(tmp_path))
+        output = tracker.get_output_path('md', 'folder', 'note', '.md')
+        assert output == Path(tmp_path) / 'md' / 'folder' / 'note' / 'note.md'
+        assert output.parent.is_dir()
+
     def test_get_output_path_creates_dirs(self, monkeypatch, tmp_path):
         monkeypatch.setenv('NOTES_EXPORT_USE_SUBDIRS', 'true')
         tracker = utils.NotesExportTracker(root_directory=str(tmp_path))
@@ -121,6 +129,24 @@ class TestNotesExportTracker:
         with open(data_file) as f:
             updated = json.load(f)
         assert updated["1234"]["lastExportedToMarkdown"] == "2024-01-01"
+
+    def test_copy_attachments_into_note_folder(self, monkeypatch, tmp_path):
+        monkeypatch.setenv('NOTES_EXPORT_NOTE_FOLDERS', 'true')
+        tracker = utils.NotesExportTracker(root_directory=str(tmp_path))
+        source_dir = tmp_path / "html" / "folder"
+        attachments = source_dir / "attachments"
+        attachments.mkdir(parents=True)
+        (attachments / "image.png").write_bytes(b"png")
+        source_file = source_dir / "note.html"
+        source_file.write_text("<img />")
+        output_file = tmp_path / "md" / "folder" / "note" / "note.md"
+        output_file.parent.mkdir(parents=True)
+        output_file.write_text("note")
+
+        tracker.copy_attachments(source_file, output_file)
+
+        assert (output_file.parent / "image.png").read_bytes() == b"png"
+        assert not (output_file.parent / "attachments").exists()
 
 
 @pytest.mark.unit

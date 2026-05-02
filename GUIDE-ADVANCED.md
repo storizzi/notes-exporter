@@ -328,6 +328,21 @@ If macOS blocks access to `~/Library/Group Containers/group.com.apple.notes`,
 grant Full Disk Access to your terminal app, or set `NOTES_EXPORT_NOTES_DATA_DIR`
 to a readable copy of that folder.
 
+### Note Folders
+
+Place each Markdown note in its own folder. Images copied from Apple Notes HTML
+and PDFs copied by `--extract-pdf-attachments` are stored beside the `.md` file:
+
+```bash
+./exportnotes.zsh --convert-markdown --note-folders --extract-pdf-attachments
+```
+
+Skip plain-text `.txt` exports during Apple Notes extraction:
+
+```bash
+./exportnotes.zsh --export-text false --convert-markdown
+```
+
 ### HTML Wrapping
 
 Wrap exported HTML with proper `<!DOCTYPE>`, `<head>`, `<title>`, `<body>`:

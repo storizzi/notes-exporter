@@ -24,6 +24,7 @@ export NOTES_EXPORT_CONVERT_TO_WORD="${NOTES_EXPORT_CONVERT_TO_WORD:=false}"
 export NOTES_EXPORT_EXTRACT_IMAGES="${NOTES_EXPORT_EXTRACT_IMAGES:=true}"
 export NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS="${NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS:=false}"
 export NOTES_EXPORT_EXTRACT_DATA="${NOTES_EXPORT_EXTRACT_DATA:=true}"
+export NOTES_EXPORT_EXPORT_TEXT="${NOTES_EXPORT_EXPORT_TEXT:=true}"
 export NOTES_EXPORT_FILENAME_FORMAT="${NOTES_EXPORT_FILENAME_FORMAT:=&title-&id}"
 export NOTES_EXPORT_SUBDIR_FORMAT="${NOTES_EXPORT_SUBDIR_FORMAT:=&account-&folder}"
 export NOTES_EXPORT_USE_SUBDIRS="${NOTES_EXPORT_USE_SUBDIRS:=true}"
@@ -43,6 +44,7 @@ export NOTES_EXPORT_CONFLICT_STRATEGY="${NOTES_EXPORT_CONFLICT_STRATEGY:=}"  # C
 export NOTES_EXPORT_NO_OVERWRITE="${NOTES_EXPORT_NO_OVERWRITE:=false}"  # Skip files that already exist
 export NOTES_EXPORT_MODIFIED_AFTER="${NOTES_EXPORT_MODIFIED_AFTER:=}"  # Only export notes modified after this date
 export NOTES_EXPORT_IMAGES_BESIDE_DOCS="${NOTES_EXPORT_IMAGES_BESIDE_DOCS:=false}"  # Put images next to docs instead of attachments/
+export NOTES_EXPORT_NOTE_FOLDERS="${NOTES_EXPORT_NOTE_FOLDERS:=false}"  # Put each Markdown note and its attachments in one folder
 export NOTES_EXPORT_HTML_WRAP="${NOTES_EXPORT_HTML_WRAP:=false}"  # Wrap HTML with proper page tags
 export NOTES_EXPORT_DEDUP_IMAGES="${NOTES_EXPORT_DEDUP_IMAGES:=false}"  # Deduplicate identical images
 export NOTES_EXPORT_UPDATE_QDRANT="${NOTES_EXPORT_UPDATE_QDRANT:=false}"  # Sync notes to Qdrant vector DB
@@ -121,6 +123,15 @@ while [[ $# -gt 0 ]]; do
                 shift 2
             else
                 export NOTES_EXPORT_EXTRACT_DATA="true"
+                shift
+            fi
+            ;;
+        --export-text)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_EXPORT_TEXT="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_EXPORT_TEXT="true"
                 shift
             fi
             ;;
@@ -364,6 +375,15 @@ while [[ $# -gt 0 ]]; do
                 shift
             fi
             ;;
+        --note-folders)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_NOTE_FOLDERS="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_NOTE_FOLDERS="true"
+                shift
+            fi
+            ;;
         --html-wrap)
             if [[ -n "$2" && "$2" != -* ]]; then
                 export NOTES_EXPORT_HTML_WRAP="$2"
@@ -426,6 +446,7 @@ while [[ $# -gt 0 ]]; do
             echo "  -w, --convert-word                 Convert to Word (default: false)"
             echo "  -i, --extract-images               Extract images (default: true)"
             echo "  -d, --extract-data                 Extract note data (default: true)"
+            echo "      --export-text                  Export plain text files (default: true)"
             echo "  -x, --use-subdirs                  Use subdirectories (default: true)"
             echo "  -n, --note-limit NUM               Limit total notes exported"
             echo "  -f, --note-limit-per-folder NUM    Limit notes per folder"
@@ -450,6 +471,7 @@ while [[ $# -gt 0 ]]; do
             echo "  -O, --no-overwrite                 Skip files that already exist (default: false)"
             echo "      --modified-after DATE          Only export notes modified after this date"
             echo "      --images-beside-docs           Put images next to HTML files instead of attachments/"
+            echo "      --note-folders                 Put each Markdown note and its attachments in one folder"
             echo "      --html-wrap                    Wrap exported HTML with proper page tags"
             echo "      --dedup-images                 Deduplicate identical images by content hash"
             echo "      --extract-pdf-attachments      Copy Apple Notes PDF attachments and link them from Markdown"
@@ -558,7 +580,7 @@ if [[ "${NOTES_EXPORT_EXTRACT_DATA}" == "true" ]]; then
     echo "Extracting note data..."
     
     # Run AppleScript (simple, like the working version)
-    osascript "$SCRIPT_DIR/export_notes.scpt" "$NOTES_EXPORT_ROOT_DIR" "$NOTES_EXPORT_NOTE_LIMIT" "$NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER" "$NOTES_EXPORT_NOTE_PICK_PROBABILITY" "$NOTES_EXPORT_FILENAME_FORMAT" "$NOTES_EXPORT_SUBDIR_FORMAT" "$NOTES_EXPORT_USE_SUBDIRS" "$NOTES_EXPORT_UPDATE_ALL" "$NOTES_EXPORT_INCLUDE_DELETED" "$NOTES_EXPORT_FILTER_ACCOUNTS" "$NOTES_EXPORT_FILTER_FOLDERS" "$NOTES_EXPORT_MODIFIED_AFTER"
+    osascript "$SCRIPT_DIR/export_notes.scpt" "$NOTES_EXPORT_ROOT_DIR" "$NOTES_EXPORT_NOTE_LIMIT" "$NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER" "$NOTES_EXPORT_NOTE_PICK_PROBABILITY" "$NOTES_EXPORT_FILENAME_FORMAT" "$NOTES_EXPORT_SUBDIR_FORMAT" "$NOTES_EXPORT_USE_SUBDIRS" "$NOTES_EXPORT_UPDATE_ALL" "$NOTES_EXPORT_INCLUDE_DELETED" "$NOTES_EXPORT_FILTER_ACCOUNTS" "$NOTES_EXPORT_FILTER_FOLDERS" "$NOTES_EXPORT_MODIFIED_AFTER" "$NOTES_EXPORT_EXPORT_TEXT"
     
     # Read statistics from temporary file
     STATS_FILE="${NOTES_EXPORT_ROOT_DIR}/data/export_stats.tmp"

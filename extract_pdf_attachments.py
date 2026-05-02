@@ -229,6 +229,8 @@ def _safe_filename(name: str) -> str:
 
 
 def _attachment_dir(md_file: Path) -> Path:
+    if os.getenv("NOTES_EXPORT_NOTE_FOLDERS", "false").lower() == "true":
+        return md_file.parent
     return md_file.parent / "attachments"
 
 
@@ -270,10 +272,10 @@ def _replace_managed_block(content: str, links: List[str]) -> str:
 
 def _append_links(md_file: Path, written_files: List[str]):
     content = md_file.read_text(encoding="utf-8")
-    links = [
-        f"- [{name}](./attachments/{quote(name)})"
-        for name in written_files
-    ]
+    if os.getenv("NOTES_EXPORT_NOTE_FOLDERS", "false").lower() == "true":
+        links = [f"- [{name}](./{quote(name)})" for name in written_files]
+    else:
+        links = [f"- [{name}](./attachments/{quote(name)})" for name in written_files]
     md_file.write_text(_replace_managed_block(content, links), encoding="utf-8")
 
 
