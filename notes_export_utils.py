@@ -109,6 +109,8 @@ class NotesExportTracker:
                 last_exported_to_format = note_info.get(last_exported_key, '')
                 filename = note_info.get('filename', f'note-{note_id}')
                 source_path = self._get_file_path(source_folder, folder_name, filename, source_extension)
+                if export_type == 'markdown' and not source_path.exists():
+                    source_path = self._get_file_path('raw', folder_name, filename, source_extension)
                 needs_export = last_exported != last_exported_to_format
 
                 if not needs_export and export_type != 'images':
