@@ -337,6 +337,24 @@ and PDFs copied by `--extract-pdf-attachments` are stored beside the `.md` file:
 ./exportnotes.zsh --convert-markdown --note-folders --extract-pdf-attachments
 ```
 
+### Consolidated Note Bundles
+
+Build one rerunnable `notes/` tree that combines the useful files for each note
+into a single folder. Each note folder contains available Markdown, processed
+HTML, raw HTML, text, copied attachments, and a `metadata.json` with Apple Notes
+IDs, folder path, filename, created/modified dates, export timestamps, and file
+manifest. A root `index.json` lists every consolidated note.
+
+```bash
+./exportnotes.zsh --convert-markdown --note-folders --extract-pdf-attachments --consolidate
+```
+
+Use a custom destination:
+
+```bash
+./exportnotes.zsh --extract-data false --extract-images false --consolidate --consolidated-dir ~/Downloads/MyNotes
+```
+
 Skip plain-text `.txt` exports during Apple Notes extraction:
 
 ```bash

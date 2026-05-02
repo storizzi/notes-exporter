@@ -43,6 +43,9 @@ chmod +x exportnotes.zsh
 # Export Markdown as one folder per note, with images/PDFs beside the note
 ./exportnotes.zsh --convert-markdown --note-folders --export-text false --extract-pdf-attachments
 
+# Build one consolidated notes/ tree with Markdown, HTML, text, attachments, and metadata
+./exportnotes.zsh --convert-markdown --note-folders --extract-pdf-attachments --consolidate
+
 # Search your notes
 python query_notes.py "meeting notes"
 python query_notes.py --modified-within 7d -l "."
@@ -57,6 +60,7 @@ Output goes to `~/Downloads/AppleNotesExport/` by default.
 - Markdown (for Obsidian, etc.), PDF, Word (DOCX)
 - Original PDF attachments linked from Markdown with `--extract-pdf-attachments`
 - Optional note-folder Markdown layout with `--note-folders`
+- Consolidated note bundles with `--consolidate`
 - Incremental — only re-exports changed notes (~3x faster than full export)
 
 **Search** across all exported notes:

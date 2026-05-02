@@ -45,6 +45,8 @@ export NOTES_EXPORT_NO_OVERWRITE="${NOTES_EXPORT_NO_OVERWRITE:=false}"  # Skip f
 export NOTES_EXPORT_MODIFIED_AFTER="${NOTES_EXPORT_MODIFIED_AFTER:=}"  # Only export notes modified after this date
 export NOTES_EXPORT_IMAGES_BESIDE_DOCS="${NOTES_EXPORT_IMAGES_BESIDE_DOCS:=false}"  # Put images next to docs instead of attachments/
 export NOTES_EXPORT_NOTE_FOLDERS="${NOTES_EXPORT_NOTE_FOLDERS:=false}"  # Put each Markdown note and its attachments in one folder
+export NOTES_EXPORT_CONSOLIDATE="${NOTES_EXPORT_CONSOLIDATE:=false}"  # Build a single note-bundle tree from all formats
+export NOTES_EXPORT_CONSOLIDATED_DIR="${NOTES_EXPORT_CONSOLIDATED_DIR:=}"  # Optional output directory for consolidated notes
 export NOTES_EXPORT_HTML_WRAP="${NOTES_EXPORT_HTML_WRAP:=false}"  # Wrap HTML with proper page tags
 export NOTES_EXPORT_DEDUP_IMAGES="${NOTES_EXPORT_DEDUP_IMAGES:=false}"  # Deduplicate identical images
 export NOTES_EXPORT_UPDATE_QDRANT="${NOTES_EXPORT_UPDATE_QDRANT:=false}"  # Sync notes to Qdrant vector DB
@@ -384,6 +386,23 @@ while [[ $# -gt 0 ]]; do
                 shift
             fi
             ;;
+        --consolidate|--amalgamate)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_CONSOLIDATE="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_CONSOLIDATE="true"
+                shift
+            fi
+            ;;
+        --consolidated-dir)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                echo "Error: --consolidated-dir requires an output directory."
+                exit 1
+            fi
+            export NOTES_EXPORT_CONSOLIDATED_DIR="$2"
+            shift 2
+            ;;
         --html-wrap)
             if [[ -n "$2" && "$2" != -* ]]; then
                 export NOTES_EXPORT_HTML_WRAP="$2"
@@ -472,6 +491,8 @@ while [[ $# -gt 0 ]]; do
             echo "      --modified-after DATE          Only export notes modified after this date"
             echo "      --images-beside-docs           Put images next to HTML files instead of attachments/"
             echo "      --note-folders                 Put each Markdown note and its attachments in one folder"
+            echo "      --consolidate, --amalgamate    Build one notes/ tree containing all formats and metadata"
+            echo "      --consolidated-dir DIR         Output directory for --consolidate (default: ROOT/notes)"
             echo "      --html-wrap                    Wrap exported HTML with proper page tags"
             echo "      --dedup-images                 Deduplicate identical images by content hash"
             echo "      --extract-pdf-attachments      Copy Apple Notes PDF attachments and link them from Markdown"
@@ -626,6 +647,11 @@ fi
 if [[ "${NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS}" == "true" ]]; then
     echo "Extracting PDF attachments..."
     "$PYTHON_CMD" "$SCRIPT_DIR/extract_pdf_attachments.py"
+fi
+
+if [[ "${NOTES_EXPORT_CONSOLIDATE}" == "true" ]]; then
+    echo "Consolidating exported note files..."
+    "$PYTHON_CMD" "$SCRIPT_DIR/consolidate_export.py"
 fi
 
 if [[ "${NOTES_EXPORT_CONVERT_TO_PDF}" == "true" ]]; then
