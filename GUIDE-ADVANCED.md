@@ -315,6 +315,54 @@ Place images next to HTML files instead of in `attachments/`:
 ./exportnotes.zsh --images-beside-docs
 ```
 
+### PDF Attachments
+
+Copy original Apple Notes PDF attachments into each Markdown note's `attachments/`
+folder and add a managed Markdown links block:
+
+```bash
+./exportnotes.zsh --convert-markdown --extract-pdf-attachments
+```
+
+If macOS blocks access to `~/Library/Group Containers/group.com.apple.notes`,
+grant Full Disk Access to your terminal app, or set `NOTES_EXPORT_NOTES_DATA_DIR`
+to a readable copy of that folder.
+
+### Note Folders
+
+Place each Markdown note in its own folder. Images copied from Apple Notes HTML
+and PDFs copied by `--extract-pdf-attachments` are stored beside the `.md` file:
+
+```bash
+./exportnotes.zsh --convert-markdown --note-folders --extract-pdf-attachments
+```
+
+### Consolidated Note Bundles
+
+Build one rerunnable `notes/` tree that combines the useful files for each note
+into a single folder. Each note folder contains available Markdown, processed
+HTML, raw HTML, text, copied attachments, and a `metadata.json` with Apple Notes
+IDs, folder path, filename, created/modified dates, export timestamps, and file
+manifest. Embedded `data:image` HTML images are extracted into the same note
+folder and rewritten to local links. A root `index.json` lists every consolidated
+note.
+
+```bash
+./exportnotes.zsh --convert-markdown --note-folders --extract-pdf-attachments --consolidate
+```
+
+Use a custom destination:
+
+```bash
+./exportnotes.zsh --extract-data false --extract-images false --consolidate --consolidated-dir ~/Downloads/MyNotes
+```
+
+Skip plain-text `.txt` exports during Apple Notes extraction:
+
+```bash
+./exportnotes.zsh --export-text false --convert-markdown
+```
+
 ### HTML Wrapping
 
 Wrap exported HTML with proper `<!DOCTYPE>`, `<head>`, `<title>`, `<body>`:

@@ -46,6 +46,14 @@ class TestNotesExportTracker:
         assert output == Path(tmp_path) / 'pdf' / 'note.pdf'
         assert output.parent.is_dir()
 
+    def test_get_markdown_output_path_with_note_folders(self, monkeypatch, tmp_path):
+        monkeypatch.setenv('NOTES_EXPORT_USE_SUBDIRS', 'true')
+        monkeypatch.setenv('NOTES_EXPORT_NOTE_FOLDERS', 'true')
+        tracker = utils.NotesExportTracker(root_directory=str(tmp_path))
+        output = tracker.get_output_path('md', 'folder', 'note', '.md')
+        assert output == Path(tmp_path) / 'md' / 'folder' / 'note' / 'note.md'
+        assert output.parent.is_dir()
+
     def test_get_output_path_creates_dirs(self, monkeypatch, tmp_path):
         monkeypatch.setenv('NOTES_EXPORT_USE_SUBDIRS', 'true')
         tracker = utils.NotesExportTracker(root_directory=str(tmp_path))
@@ -87,10 +95,18 @@ class TestNotesExportTracker:
         data_dir.mkdir()
         (data_dir / "notebook1.json").write_text("{}")
         (data_dir / "notebook2.json").write_text("{}")
+        nested_dir = data_dir / "parent"
+        nested_dir.mkdir()
+        (nested_dir / "child.json").write_text("{}")
         (data_dir / "not-json.txt").write_text("")
         files = tracker.get_all_data_files()
-        assert len(files) == 2
+        assert len(files) == 3
         assert all(f.suffix == ".json" for f in files)
+
+    def test_notebook_name_from_nested_data_file(self, tmp_path):
+        tracker = utils.NotesExportTracker(root_directory=str(tmp_path))
+        data_file = tmp_path / "data" / "iCloud-Personal" / "Travel.json"
+        assert tracker.notebook_name_from_data_file(data_file) == "iCloud-Personal/Travel"
 
     def test_get_all_data_files_no_dir(self, tmp_path):
         tracker = utils.NotesExportTracker(root_directory=str(tmp_path))
@@ -121,6 +137,26 @@ class TestNotesExportTracker:
         with open(data_file) as f:
             updated = json.load(f)
         assert updated["1234"]["lastExportedToMarkdown"] == "2024-01-01"
+
+    def test_copy_attachments_into_note_folder(self, monkeypatch, tmp_path):
+        monkeypatch.setenv('NOTES_EXPORT_NOTE_FOLDERS', 'true')
+        tracker = utils.NotesExportTracker(root_directory=str(tmp_path))
+        source_dir = tmp_path / "html" / "folder"
+        attachments = source_dir / "attachments"
+        attachments.mkdir(parents=True)
+        (attachments / "note-attachment-001.png").write_bytes(b"png")
+        (attachments / "other-note-attachment-001.png").write_bytes(b"other")
+        source_file = source_dir / "note.html"
+        source_file.write_text("<img />")
+        output_file = tmp_path / "md" / "folder" / "note" / "note.md"
+        output_file.parent.mkdir(parents=True)
+        output_file.write_text("note")
+
+        tracker.copy_attachments(source_file, output_file)
+
+        assert (output_file.parent / "note-attachment-001.png").read_bytes() == b"png"
+        assert not (output_file.parent / "other-note-attachment-001.png").exists()
+        assert not (output_file.parent / "attachments").exists()
 
 
 @pytest.mark.unit

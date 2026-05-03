@@ -6,6 +6,15 @@ SCRIPT_START_TIME=$SECONDS
 # Determine the directory where the script is located
 SCRIPT_DIR=$(dirname $(realpath "$0"))
 
+if command -v python >/dev/null 2>&1; then
+    PYTHON_CMD="python"
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_CMD="python3"
+else
+    echo "Error: Python is required but neither python nor python3 was found."
+    exit 1
+fi
+
 # Set environment variable defaults and export them
 export NOTES_EXPORT_ROOT_DIR="${NOTES_EXPORT_ROOT_DIR:=$HOME/Downloads/AppleNotesExport}"
 export NOTES_EXPORT_SUPPRESS_CHROME_HEADER_PDF="${NOTES_EXPORT_SUPPRESS_CHROME_HEADER_PDF:=true}"
@@ -13,7 +22,9 @@ export NOTES_EXPORT_CONVERT_TO_MARKDOWN="${NOTES_EXPORT_CONVERT_TO_MARKDOWN:=fal
 export NOTES_EXPORT_CONVERT_TO_PDF="${NOTES_EXPORT_CONVERT_TO_PDF:=false}"
 export NOTES_EXPORT_CONVERT_TO_WORD="${NOTES_EXPORT_CONVERT_TO_WORD:=false}"
 export NOTES_EXPORT_EXTRACT_IMAGES="${NOTES_EXPORT_EXTRACT_IMAGES:=true}"
+export NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS="${NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS:=false}"
 export NOTES_EXPORT_EXTRACT_DATA="${NOTES_EXPORT_EXTRACT_DATA:=true}"
+export NOTES_EXPORT_EXPORT_TEXT="${NOTES_EXPORT_EXPORT_TEXT:=true}"
 export NOTES_EXPORT_FILENAME_FORMAT="${NOTES_EXPORT_FILENAME_FORMAT:=&title-&id}"
 export NOTES_EXPORT_SUBDIR_FORMAT="${NOTES_EXPORT_SUBDIR_FORMAT:=&account-&folder}"
 export NOTES_EXPORT_USE_SUBDIRS="${NOTES_EXPORT_USE_SUBDIRS:=true}"
@@ -33,6 +44,9 @@ export NOTES_EXPORT_CONFLICT_STRATEGY="${NOTES_EXPORT_CONFLICT_STRATEGY:=}"  # C
 export NOTES_EXPORT_NO_OVERWRITE="${NOTES_EXPORT_NO_OVERWRITE:=false}"  # Skip files that already exist
 export NOTES_EXPORT_MODIFIED_AFTER="${NOTES_EXPORT_MODIFIED_AFTER:=}"  # Only export notes modified after this date
 export NOTES_EXPORT_IMAGES_BESIDE_DOCS="${NOTES_EXPORT_IMAGES_BESIDE_DOCS:=false}"  # Put images next to docs instead of attachments/
+export NOTES_EXPORT_NOTE_FOLDERS="${NOTES_EXPORT_NOTE_FOLDERS:=false}"  # Put each Markdown note and its attachments in one folder
+export NOTES_EXPORT_CONSOLIDATE="${NOTES_EXPORT_CONSOLIDATE:=false}"  # Build a single note-bundle tree from all formats
+export NOTES_EXPORT_CONSOLIDATED_DIR="${NOTES_EXPORT_CONSOLIDATED_DIR:=}"  # Optional output directory for consolidated notes
 export NOTES_EXPORT_HTML_WRAP="${NOTES_EXPORT_HTML_WRAP:=false}"  # Wrap HTML with proper page tags
 export NOTES_EXPORT_DEDUP_IMAGES="${NOTES_EXPORT_DEDUP_IMAGES:=false}"  # Deduplicate identical images
 export NOTES_EXPORT_UPDATE_QDRANT="${NOTES_EXPORT_UPDATE_QDRANT:=false}"  # Sync notes to Qdrant vector DB
@@ -111,6 +125,15 @@ while [[ $# -gt 0 ]]; do
                 shift 2
             else
                 export NOTES_EXPORT_EXTRACT_DATA="true"
+                shift
+            fi
+            ;;
+        --export-text)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_EXPORT_TEXT="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_EXPORT_TEXT="true"
                 shift
             fi
             ;;
@@ -354,6 +377,32 @@ while [[ $# -gt 0 ]]; do
                 shift
             fi
             ;;
+        --note-folders)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_NOTE_FOLDERS="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_NOTE_FOLDERS="true"
+                shift
+            fi
+            ;;
+        --consolidate|--amalgamate)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_CONSOLIDATE="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_CONSOLIDATE="true"
+                shift
+            fi
+            ;;
+        --consolidated-dir)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                echo "Error: --consolidated-dir requires an output directory."
+                exit 1
+            fi
+            export NOTES_EXPORT_CONSOLIDATED_DIR="$2"
+            shift 2
+            ;;
         --html-wrap)
             if [[ -n "$2" && "$2" != -* ]]; then
                 export NOTES_EXPORT_HTML_WRAP="$2"
@@ -372,6 +421,15 @@ while [[ $# -gt 0 ]]; do
                 shift
             fi
             ;;
+        --extract-pdf-attachments)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                export NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS="$2"
+                shift 2
+            else
+                export NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS="true"
+                shift
+            fi
+            ;;
         --update-qdrant)
             if [[ -n "$2" && "$2" != -* ]]; then
                 export NOTES_EXPORT_UPDATE_QDRANT="$2"
@@ -384,7 +442,7 @@ while [[ $# -gt 0 ]]; do
         --query|-Q)
             # Run a search query against exported notes and exit
             shift
-            python "$SCRIPT_DIR/query_notes.py" "$@"
+            "$PYTHON_CMD" "$SCRIPT_DIR/query_notes.py" "$@"
             exit $?
             ;;
         --all-formats|--all|-a)
@@ -407,6 +465,7 @@ while [[ $# -gt 0 ]]; do
             echo "  -w, --convert-word                 Convert to Word (default: false)"
             echo "  -i, --extract-images               Extract images (default: true)"
             echo "  -d, --extract-data                 Extract note data (default: true)"
+            echo "      --export-text                  Export plain text files (default: true)"
             echo "  -x, --use-subdirs                  Use subdirectories (default: true)"
             echo "  -n, --note-limit NUM               Limit total notes exported"
             echo "  -f, --note-limit-per-folder NUM    Limit notes per folder"
@@ -431,8 +490,12 @@ while [[ $# -gt 0 ]]; do
             echo "  -O, --no-overwrite                 Skip files that already exist (default: false)"
             echo "      --modified-after DATE          Only export notes modified after this date"
             echo "      --images-beside-docs           Put images next to HTML files instead of attachments/"
+            echo "      --note-folders                 Put each Markdown note and its attachments in one folder"
+            echo "      --consolidate, --amalgamate    Build one notes/ tree containing all formats and metadata"
+            echo "      --consolidated-dir DIR         Output directory for --consolidate (default: ROOT/notes)"
             echo "      --html-wrap                    Wrap exported HTML with proper page tags"
             echo "      --dedup-images                 Deduplicate identical images by content hash"
+            echo "      --extract-pdf-attachments      Copy Apple Notes PDF attachments and link them from Markdown"
             echo "      --update-qdrant                Sync notes to Qdrant vector database for AI search"
             echo "  -Q, --query PATTERN [opts]         Search exported notes (use --query --help for details)"
             echo "  -a, --all-formats, --all           Enable all format conversions"
@@ -538,7 +601,7 @@ if [[ "${NOTES_EXPORT_EXTRACT_DATA}" == "true" ]]; then
     echo "Extracting note data..."
     
     # Run AppleScript (simple, like the working version)
-    osascript "$SCRIPT_DIR/export_notes.scpt" "$NOTES_EXPORT_ROOT_DIR" "$NOTES_EXPORT_NOTE_LIMIT" "$NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER" "$NOTES_EXPORT_NOTE_PICK_PROBABILITY" "$NOTES_EXPORT_FILENAME_FORMAT" "$NOTES_EXPORT_SUBDIR_FORMAT" "$NOTES_EXPORT_USE_SUBDIRS" "$NOTES_EXPORT_UPDATE_ALL" "$NOTES_EXPORT_INCLUDE_DELETED" "$NOTES_EXPORT_FILTER_ACCOUNTS" "$NOTES_EXPORT_FILTER_FOLDERS" "$NOTES_EXPORT_MODIFIED_AFTER"
+    osascript "$SCRIPT_DIR/export_notes.scpt" "$NOTES_EXPORT_ROOT_DIR" "$NOTES_EXPORT_NOTE_LIMIT" "$NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER" "$NOTES_EXPORT_NOTE_PICK_PROBABILITY" "$NOTES_EXPORT_FILENAME_FORMAT" "$NOTES_EXPORT_SUBDIR_FORMAT" "$NOTES_EXPORT_USE_SUBDIRS" "$NOTES_EXPORT_UPDATE_ALL" "$NOTES_EXPORT_INCLUDE_DELETED" "$NOTES_EXPORT_FILTER_ACCOUNTS" "$NOTES_EXPORT_FILTER_FOLDERS" "$NOTES_EXPORT_MODIFIED_AFTER" "$NOTES_EXPORT_EXPORT_TEXT"
     
     # Read statistics from temporary file
     STATS_FILE="${NOTES_EXPORT_ROOT_DIR}/data/export_stats.tmp"
@@ -572,29 +635,39 @@ fi
 # Conditionally execute the image extraction script
 if [[ "${NOTES_EXPORT_EXTRACT_IMAGES}" == "true" ]]; then
     echo "Extracting images..."
-    python "$SCRIPT_DIR/extract_images.py"
+    "$PYTHON_CMD" "$SCRIPT_DIR/extract_images.py"
 fi
 
 # Conditionally execute the conversion scripts
 if [[ "${NOTES_EXPORT_CONVERT_TO_MARKDOWN}" == "true" ]]; then
     echo "Converting to Markdown..."
-    python "$SCRIPT_DIR/convert_to_markdown.py"
+    "$PYTHON_CMD" "$SCRIPT_DIR/convert_to_markdown.py"
+fi
+
+if [[ "${NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS}" == "true" ]]; then
+    echo "Extracting PDF attachments..."
+    "$PYTHON_CMD" "$SCRIPT_DIR/extract_pdf_attachments.py"
+fi
+
+if [[ "${NOTES_EXPORT_CONSOLIDATE}" == "true" ]]; then
+    echo "Consolidating exported note files..."
+    "$PYTHON_CMD" "$SCRIPT_DIR/consolidate_export.py"
 fi
 
 if [[ "${NOTES_EXPORT_CONVERT_TO_PDF}" == "true" ]]; then
     echo "Converting to PDF..."
-    python "$SCRIPT_DIR/convert_to_pdf.py"
+    "$PYTHON_CMD" "$SCRIPT_DIR/convert_to_pdf.py"
 fi
 
 if [[ "${NOTES_EXPORT_CONVERT_TO_WORD}" == "true" ]]; then
     echo "Converting to Word..."
-    python "$SCRIPT_DIR/convert_to_word.py"
+    "$PYTHON_CMD" "$SCRIPT_DIR/convert_to_word.py"
 fi
 
 # Optionally set filesystem dates to match Apple Notes dates
 if [[ "${NOTES_EXPORT_SET_FILE_DATES}" == "true" ]]; then
     echo "Setting file dates to match Apple Notes..."
-    python "$SCRIPT_DIR/set_file_dates.py"
+    "$PYTHON_CMD" "$SCRIPT_DIR/set_file_dates.py"
 fi
 
 # Sync back to Apple Notes if requested
@@ -616,7 +689,7 @@ if [[ "${NOTES_EXPORT_SYNC}" == "true" ]]; then
     if [[ -n "${NOTES_EXPORT_FILTER_ACCOUNTS}" ]]; then
         SYNC_ARGS="$SYNC_ARGS --filter-accounts ${NOTES_EXPORT_FILTER_ACCOUNTS}"
     fi
-    python "$SCRIPT_DIR/sync_to_notes.py" $SYNC_ARGS
+    "$PYTHON_CMD" "$SCRIPT_DIR/sync_to_notes.py" $SYNC_ARGS
 
     # Auto-regenerate formats after sync if settings say so
     # Only runs when not in dry-run mode
@@ -634,13 +707,13 @@ print(','.join(formats))
         if [[ -n "$REGEN_ARGS" ]]; then
             echo "Auto-regenerating formats after sync: $REGEN_ARGS"
             if [[ "$REGEN_ARGS" == *"html"* ]]; then
-                python "$SCRIPT_DIR/extract_images.py"
+                "$PYTHON_CMD" "$SCRIPT_DIR/extract_images.py"
             fi
             if [[ "$REGEN_ARGS" == *"pdf"* ]]; then
-                python "$SCRIPT_DIR/convert_to_pdf.py"
+                "$PYTHON_CMD" "$SCRIPT_DIR/convert_to_pdf.py"
             fi
             if [[ "$REGEN_ARGS" == *"word"* ]]; then
-                python "$SCRIPT_DIR/convert_to_word.py"
+                "$PYTHON_CMD" "$SCRIPT_DIR/convert_to_word.py"
             fi
         fi
     fi
@@ -649,7 +722,7 @@ fi
 # Sync notes to Qdrant vector database if requested
 if [[ "${NOTES_EXPORT_UPDATE_QDRANT}" == "true" ]]; then
     echo "Syncing notes to Qdrant..."
-    python "$SCRIPT_DIR/qdrant_integration.py" sync
+    "$PYTHON_CMD" "$SCRIPT_DIR/qdrant_integration.py" sync
 fi
 
 # Optionally deactivate and remove the venv

@@ -38,7 +38,9 @@ Configure scheduled automatic exports via macOS launchd.
 |--------|-------|---------|-------------|
 | `--root-dir DIR` | `-r` | `~/Downloads/AppleNotesExport` | Output directory |
 | `--extract-data` | `-d` | `true` | Extract from Apple Notes |
+| `--export-text` | — | `true` | Export plain text files during extraction |
 | `--extract-images` | `-i` | `true` | Extract images from HTML |
+| `--extract-pdf-attachments` | — | `false` | Copy original PDFs and link from Markdown |
 | `--convert-markdown` | `-m` | `false` | Convert to Markdown |
 | `--convert-pdf` | `-p` | `false` | Convert to PDF |
 | `--convert-word` | `-w` | `false` | Convert to Word (DOCX) |
@@ -69,6 +71,7 @@ Configure scheduled automatic exports via macOS launchd.
 | `--set-file-dates` | `-D` | `false` | Set filesystem dates |
 | `--no-overwrite` | `-O` | `false` | Skip existing files |
 | `--images-beside-docs` | — | `false` | Images next to files |
+| `--note-folders` | — | `false` | Each Markdown note gets its own folder |
 | `--html-wrap` | — | `false` | Proper HTML page tags |
 | `--dedup-images` | — | `false` | Deduplicate images |
 
@@ -645,8 +648,9 @@ AppleNotesExport/              # NOTES_EXPORT_ROOT_DIR
       My-Note-1234.txt
   md/                          # Markdown
     iCloud-Notes/
-      My-Note-1234.md
-      attachments/
+      My-Note-1234/
+        My-Note-1234.md        # With --note-folders
+        My-Note-1234-pdf-001-Contract.pdf
   pdf/                         # PDF (via Chrome)
     iCloud-Notes/
       My-Note-1234.pdf

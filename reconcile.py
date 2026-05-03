@@ -76,7 +76,7 @@ def count_tracking_json(tracker) -> dict:
     """Count notes in tracking JSON files. Returns {notebook: {total, active, deleted}}."""
     counts = {}
     for json_file in tracker.get_all_data_files():
-        notebook = json_file.stem
+        notebook = tracker.notebook_name_from_data_file(json_file)
         data = tracker.load_notebook_data(json_file)
         active = sum(1 for info in data.values() if 'deletedDate' not in info)
         deleted = sum(1 for info in data.values() if 'deletedDate' in info)
@@ -176,7 +176,7 @@ def get_tracked_notes(tracker) -> dict:
     """Get all tracked notes keyed by notebook. Returns {notebook: {note_id: info}}."""
     result = {}
     for json_file in tracker.get_all_data_files():
-        notebook = json_file.stem
+        notebook = tracker.notebook_name_from_data_file(json_file)
         data = tracker.load_notebook_data(json_file)
         result[notebook] = data
     return result

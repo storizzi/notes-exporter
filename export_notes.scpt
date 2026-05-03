@@ -12,6 +12,11 @@ on run argv
     set envFilterAccounts to item 10 of argv  -- comma-separated account name filter
     set envFilterFolders to item 11 of argv  -- comma-separated folder name filter
     set envModifiedAfter to item 12 of argv  -- only export notes modified after this date
+    if (count of argv) ≥ 13 then
+        set envExportText to item 13 of argv
+    else
+        set envExportText to "true"
+    end if
 
     -- Parse filter lists into AppleScript lists
     set filterAccountsList to my splitByDelimiter(envFilterAccounts, ",")
@@ -55,6 +60,11 @@ on run argv
         set updateAllNotes to true
     end if
 
+    set exportTextFiles to true
+    if envExportText is equal to "false" then
+        set exportTextFiles to false
+    end if
+
     -- Convert include deleted flag
     set includeDeleted to false
     if envIncludeDeleted is equal to "true" then
@@ -89,7 +99,9 @@ on run argv
     my createDirectory(rawDirectory) 
     my createDirectory(dataDirectory)
     my createDirectory(htmlDirectory)
-    my createDirectory(textDirectory)
+    if exportTextFiles then
+        my createDirectory(textDirectory)
+    end if
 
     -- Variables for statistics
     set totalNotesOutput to 0
@@ -122,15 +134,22 @@ on run argv
             if accountMatchesFilter then
             set accountID to my extractAccountID(id of anAccount)
             set shortAccountID to my extractShortAccountID(accountID)
+            set folderPathMap to {}
+            repeat with rootFolder in every folder of anAccount
+                if ((class of container of rootFolder) as string) is "account" then
+                    set folderPathMap to folderPathMap & my collectFolderPaths(rootFolder, "")
+                end if
+            end repeat
             set theFolders to every folder of anAccount
             repeat with aFolder in theFolders
-                set folderName to my makeValidFilename(name of aFolder)
+                set folderLeafName to my makeValidFilename(name of aFolder)
+                set folderName to my getFolderPath(folderPathMap, id of aFolder, folderLeafName)
                 set rawFolderName to name of aFolder
 
                 -- Filter folders if filter is set
                 set folderMatchesFilter to true
                 if envFilterFolders is not equal to "" then
-                    if filterFoldersList does not contain rawFolderName and filterFoldersList does not contain folderName then
+                    if filterFoldersList does not contain rawFolderName and filterFoldersList does not contain folderLeafName and filterFoldersList does not contain folderName then
                         set folderMatchesFilter to false
                         log "Skipping folder: " & folderName & " (not in filter)"
                     end if
@@ -264,15 +283,17 @@ on run argv
 
                             -- Read content only for changed notes (expensive)
                             set htmlContent to body of theNote
-                            set textContent to plaintext of theNote
 
                             -- Generate file paths
                             set noteRawPath to POSIX path of (folderRawPath & noteName & ".html")
-                            set noteTextPath to POSIX path of (folderTextPath & noteName & ".txt")
 
                             -- Save files
                             my writeToFile(noteRawPath, htmlContent)
-                            my writeToFile(noteTextPath, textContent)
+                            if exportTextFiles then
+                                set textContent to plaintext of theNote
+                                set noteTextPath to POSIX path of (folderTextPath & noteName & ".txt")
+                                my writeToFile(noteTextPath, textContent)
+                            end if
 
                             -- Handle filename changes
                             my handleFilenameChange(existingData, noteID, oldFileName, noteName, folderRawPath, folderTextPath)
@@ -516,6 +537,39 @@ on makeValidFilename(fileName)
 
     return fileName
 end makeValidFilename
+
+-- Build a sanitized path for each folder by traversing the Apple Notes folder tree.
+on collectFolderPaths(theFolder, parentPath)
+    tell application "Notes"
+        set folderName to my makeValidFilename(name of theFolder)
+        if parentPath is "" then
+            set folderPath to folderName
+        else
+            set folderPath to parentPath & "/" & folderName
+        end if
+
+        set folderPaths to {{id of theFolder, folderPath}}
+        try
+            set childFolders to folders of theFolder
+        on error
+            set childFolders to {}
+        end try
+        repeat with childFolder in childFolders
+            set folderPaths to folderPaths & my collectFolderPaths(childFolder, folderPath)
+        end repeat
+        return folderPaths
+    end tell
+end collectFolderPaths
+
+on getFolderPath(folderPathMap, folderID, fallbackName)
+    set folderIDText to folderID as string
+    repeat with folderPathRecord in folderPathMap
+        if (item 1 of folderPathRecord as string) is folderIDText then
+            return item 2 of folderPathRecord
+        end if
+    end repeat
+    return fallbackName
+end getFolderPath
 
 -- Subroutine to generate a filename based on the specified format
 on generateFilename(format, title, id, account, folder, accountID, shortAccountID)
@@ -792,6 +846,8 @@ on saveNotebookData(filePath, dataRecord)
         set saveCommand to "python3 -c \"
 import json
 import os
+
+os.makedirs(os.path.dirname('" & filePath & "'), exist_ok=True)
 
 # Load existing data if it exists
 existing_data = {}

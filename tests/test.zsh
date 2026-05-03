@@ -4,6 +4,17 @@ SCRIPT_DIR="$(dirname ${0:A})"
 PROJECT_DIR="$(dirname ${SCRIPT_DIR})"
 OUTPUT_FILE="${SCRIPT_DIR}/test_results.txt"
 
+if [[ -x "${PROJECT_DIR}/.venv/bin/python" ]]; then
+    PYTEST_CMD=("${PROJECT_DIR}/.venv/bin/python" "-m" "pytest")
+elif command -v python3 >/dev/null 2>&1; then
+    PYTEST_CMD=("python3" "-m" "pytest")
+elif command -v python >/dev/null 2>&1; then
+    PYTEST_CMD=("python" "-m" "pytest")
+else
+    echo "Error: Python is required but was not found."
+    exit 1
+fi
+
 echo "Running tests in: ${SCRIPT_DIR}"
 echo "Outputting results to: ${OUTPUT_FILE}"
 echo "---------------------------------------------------"
@@ -27,11 +38,11 @@ echo "---------------------------------------------------"
 pushd "${PROJECT_DIR}" > /dev/null
 
 if [[ -n "$1" ]]; then
-    echo "Running: pytest -m $1 -v"
-    pytest -m "$1" -v > "${OUTPUT_FILE}" 2>&1
+    echo "Running: ${PYTEST_CMD[*]} -m $1 -v"
+    "${PYTEST_CMD[@]}" -m "$1" -v > "${OUTPUT_FILE}" 2>&1
 else
-    echo "Running: pytest -v (all tests)"
-    pytest -v > "${OUTPUT_FILE}" 2>&1
+    echo "Running: ${PYTEST_CMD[*]} -v (all tests)"
+    "${PYTEST_CMD[@]}" -v > "${OUTPUT_FILE}" 2>&1
 fi
 
 EXIT_CODE=$?

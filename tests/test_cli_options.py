@@ -21,6 +21,7 @@ def parse_option(args: str, env_var: str) -> str:
     export NOTES_EXPORT_CONVERT_TO_WORD="false"
     export NOTES_EXPORT_EXTRACT_IMAGES="true"
     export NOTES_EXPORT_EXTRACT_DATA="true"
+    export NOTES_EXPORT_EXPORT_TEXT="true"
     export NOTES_EXPORT_FILENAME_FORMAT="&title-&id"
     export NOTES_EXPORT_SUBDIR_FORMAT="&account-&folder"
     export NOTES_EXPORT_USE_SUBDIRS="true"
@@ -40,8 +41,10 @@ def parse_option(args: str, env_var: str) -> str:
     export NOTES_EXPORT_NO_OVERWRITE="false"
     export NOTES_EXPORT_MODIFIED_AFTER=""
     export NOTES_EXPORT_IMAGES_BESIDE_DOCS="false"
+    export NOTES_EXPORT_NOTE_FOLDERS="false"
     export NOTES_EXPORT_HTML_WRAP="false"
     export NOTES_EXPORT_DEDUP_IMAGES="false"
+    export NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS="false"
 
     set -- {args}
 
@@ -76,6 +79,12 @@ def parse_option(args: str, env_var: str) -> str:
                     export NOTES_EXPORT_EXTRACT_DATA="$2"; shift 2
                 else
                     export NOTES_EXPORT_EXTRACT_DATA="true"; shift
+                fi;;
+            --export-text)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    export NOTES_EXPORT_EXPORT_TEXT="$2"; shift 2
+                else
+                    export NOTES_EXPORT_EXPORT_TEXT="true"; shift
                 fi;;
             --suppress-header-pdf|-s)
                 if [[ -n "$2" && "$2" != -* ]]; then
@@ -163,6 +172,12 @@ def parse_option(args: str, env_var: str) -> str:
                 else
                     export NOTES_EXPORT_IMAGES_BESIDE_DOCS="true"; shift
                 fi;;
+            --note-folders)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    export NOTES_EXPORT_NOTE_FOLDERS="$2"; shift 2
+                else
+                    export NOTES_EXPORT_NOTE_FOLDERS="true"; shift
+                fi;;
             --html-wrap)
                 if [[ -n "$2" && "$2" != -* ]]; then
                     export NOTES_EXPORT_HTML_WRAP="$2"; shift 2
@@ -174,6 +189,12 @@ def parse_option(args: str, env_var: str) -> str:
                     export NOTES_EXPORT_DEDUP_IMAGES="$2"; shift 2
                 else
                     export NOTES_EXPORT_DEDUP_IMAGES="true"; shift
+                fi;;
+            --extract-pdf-attachments)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    export NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS="$2"; shift 2
+                else
+                    export NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS="true"; shift
                 fi;;
             --clean|-C)
                 if [[ -n "$2" && "$2" != -* ]]; then
@@ -226,6 +247,7 @@ class TestBooleanFlagOptions:
         ("--convert-word", "NOTES_EXPORT_CONVERT_TO_WORD"),
         ("--extract-images", "NOTES_EXPORT_EXTRACT_IMAGES"),
         ("--extract-data", "NOTES_EXPORT_EXTRACT_DATA"),
+        ("--export-text", "NOTES_EXPORT_EXPORT_TEXT"),
         ("--suppress-header-pdf", "NOTES_EXPORT_SUPPRESS_CHROME_HEADER_PDF"),
         ("--use-subdirs", "NOTES_EXPORT_USE_SUBDIRS"),
         ("--update-all", "NOTES_EXPORT_UPDATE_ALL"),
@@ -240,8 +262,10 @@ class TestBooleanFlagOptions:
         ("--create-new", "NOTES_EXPORT_CREATE_NEW"),
         ("--no-overwrite", "NOTES_EXPORT_NO_OVERWRITE"),
         ("--images-beside-docs", "NOTES_EXPORT_IMAGES_BESIDE_DOCS"),
+        ("--note-folders", "NOTES_EXPORT_NOTE_FOLDERS"),
         ("--html-wrap", "NOTES_EXPORT_HTML_WRAP"),
         ("--dedup-images", "NOTES_EXPORT_DEDUP_IMAGES"),
+        ("--extract-pdf-attachments", "NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS"),
     ])
     def test_flag_without_value_sets_true(self, flag, env_var):
         assert parse_option(flag, env_var) == "true"
@@ -251,9 +275,12 @@ class TestBooleanFlagOptions:
         ("--convert-pdf", "NOTES_EXPORT_CONVERT_TO_PDF"),
         ("--extract-images", "NOTES_EXPORT_EXTRACT_IMAGES"),
         ("--extract-data", "NOTES_EXPORT_EXTRACT_DATA"),
+        ("--export-text", "NOTES_EXPORT_EXPORT_TEXT"),
         ("--update-all", "NOTES_EXPORT_UPDATE_ALL"),
         ("--set-file-dates", "NOTES_EXPORT_SET_FILE_DATES"),
         ("--clean", "NOTES_EXPORT_CLEAN"),
+        ("--extract-pdf-attachments", "NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS"),
+        ("--note-folders", "NOTES_EXPORT_NOTE_FOLDERS"),
     ])
     def test_flag_with_explicit_true(self, flag, env_var):
         assert parse_option(f"{flag} true", env_var) == "true"
@@ -262,8 +289,11 @@ class TestBooleanFlagOptions:
         ("--convert-markdown", "NOTES_EXPORT_CONVERT_TO_MARKDOWN"),
         ("--extract-images", "NOTES_EXPORT_EXTRACT_IMAGES"),
         ("--extract-data", "NOTES_EXPORT_EXTRACT_DATA"),
+        ("--export-text", "NOTES_EXPORT_EXPORT_TEXT"),
         ("--update-all", "NOTES_EXPORT_UPDATE_ALL"),
         ("--set-file-dates", "NOTES_EXPORT_SET_FILE_DATES"),
+        ("--extract-pdf-attachments", "NOTES_EXPORT_EXTRACT_PDF_ATTACHMENTS"),
+        ("--note-folders", "NOTES_EXPORT_NOTE_FOLDERS"),
     ])
     def test_flag_with_explicit_false(self, flag, env_var):
         assert parse_option(f"{flag} false", env_var) == "false"
