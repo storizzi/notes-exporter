@@ -1,9 +1,23 @@
 import os
 import base64
 import hashlib
+from urllib.parse import quote
 from bs4 import BeautifulSoup
 from pathlib import Path
 from notes_export_utils import get_tracker
+
+
+def _encode_src(relative_path: str) -> str:
+    """Percent-encode an attachment reference so filenames containing spaces,
+    parentheses, or other reserved characters produce a valid link once the
+    HTML is converted to Markdown.
+
+    Path separators are preserved. Without this, a filename such as
+    ``note-)-attachment-001.png`` becomes ``![](./attachments/note-)-...)`` in
+    Markdown, where the first ``)`` terminates the link early and the image
+    fails to render.
+    """
+    return quote(relative_path, safe="/")
 
 
 def _should_skip_existing(output_path: Path) -> bool:
@@ -142,7 +156,7 @@ def extract_and_replace_base64_images():
                                     img_relative_path = os.path.relpath(existing_path, html_file.parent)
                                 except ValueError:
                                     img_relative_path = str(existing_path)
-                                img_tag['src'] = img_relative_path
+                                img_tag['src'] = _encode_src(img_relative_path)
                                 images_extracted = True
                                 print(f"  Dedup: reusing {existing_path.name}")
                                 continue
@@ -171,7 +185,7 @@ def extract_and_replace_base64_images():
                             img_relative_path = f"./{img_filename}"
                         else:
                             img_relative_path = f"./attachments/{img_filename}"
-                        img_tag['src'] = img_relative_path
+                        img_tag['src'] = _encode_src(img_relative_path)
 
                         images_extracted = True
 
