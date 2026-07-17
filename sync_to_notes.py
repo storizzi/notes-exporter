@@ -5,6 +5,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import unquote
 
 from bs4 import BeautifulSoup
 
@@ -39,15 +40,24 @@ def embed_images_as_base64(html_content: str, base_dir: Path) -> str:
         if not src or src.startswith("data:"):
             continue
 
-        # Resolve the image path relative to the base directory
+        # Resolve the image path relative to the base directory.
+        # extract_images.py percent-encodes src values so they survive
+        # Markdown conversion; try the verbatim src first (pre-encoding
+        # exports, and filenames containing a literal %), then the decoded
+        # form.
+        src_variants = [src]
+        decoded = unquote(src)
+        if decoded != src:
+            src_variants.append(decoded)
+
         img_path = None
-        candidates = [
-            base_dir / src,
-            base_dir / "attachments" / Path(src).name,
-        ]
-        # Also try stripping leading ./
-        if src.startswith("./"):
-            candidates.insert(0, base_dir / src[2:])
+        candidates = []
+        for variant in src_variants:
+            # Try stripping leading ./ first
+            if variant.startswith("./"):
+                candidates.append(base_dir / variant[2:])
+            candidates.append(base_dir / variant)
+            candidates.append(base_dir / "attachments" / Path(variant).name)
 
         for candidate in candidates:
             if candidate.exists():

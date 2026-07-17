@@ -7,6 +7,7 @@ from markdownify import markdownify as md
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from extract_images import _encode_src
+from sync_to_notes import embed_images_as_base64
 
 
 @pytest.mark.unit
@@ -55,3 +56,46 @@ class TestEncodedSrcSurvivesMarkdown:
         markdown = md(f'<img src="{src}"/>').strip()
         dest = markdown[markdown.index("(") + 1: markdown.rindex(")")]
         assert " " not in dest
+
+
+@pytest.mark.unit
+@pytest.mark.export
+class TestEncodedSrcRoundTripsThroughSync:
+    """Encoding on export must not break the sync path back into Notes:
+    embed_images_as_base64 (the inverse of extract_images) has to resolve
+    the percent-encoded src back to the file on disk."""
+
+    PNG = b'\x89PNG\r\n\x1a\n' + b'\x00' * 50
+
+    def test_encoded_src_resolves_to_file(self, tmp_path):
+        attachments = tmp_path / "attachments"
+        attachments.mkdir()
+        (attachments / "my note (2)-001.png").write_bytes(self.PNG)
+
+        src = _encode_src("./attachments/my note (2)-001.png")
+        assert "%20" in src  # sanity: it really is encoded
+        result = embed_images_as_base64(f'<img src="{src}"/>', tmp_path)
+        assert "data:image/png;base64," in result
+
+    def test_verbatim_src_still_resolves(self, tmp_path):
+        # Exports produced before encoding was introduced have verbatim
+        # src values; those must keep working.
+        attachments = tmp_path / "attachments"
+        attachments.mkdir()
+        (attachments / "my note (2)-001.png").write_bytes(self.PNG)
+
+        result = embed_images_as_base64(
+            '<img src="./attachments/my note (2)-001.png"/>', tmp_path)
+        assert "data:image/png;base64," in result
+
+    def test_literal_percent_filename_not_mangled(self, tmp_path):
+        # A filename can legitimately contain % (e.g. a note titled with a
+        # URL-encoded link). Verbatim resolution must win over decoding,
+        # otherwise unquote() would rewrite %2F and miss the file.
+        attachments = tmp_path / "attachments"
+        attachments.mkdir()
+        (attachments / "https%3A%2F%2Fexample-001.png").write_bytes(self.PNG)
+
+        result = embed_images_as_base64(
+            '<img src="./attachments/https%3A%2F%2Fexample-001.png"/>', tmp_path)
+        assert "data:image/png;base64," in result
