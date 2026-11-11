@@ -183,7 +183,8 @@ class AuthStore:
     def admin_count(self) -> int:
         return self.db.one("SELECT COUNT(*) AS n FROM users WHERE role='admin'")["n"]
 
-    def create_user(self, username: str, password: str, role: str = "reader") -> dict:
+    def check_new_user(self, username: str, password: str, role: str = "reader") -> bytes:
+        """Raise AuthError if create_user would refuse; returns the encoded password."""
         if not _USERNAME.match(username or ""):
             raise AuthError("usernames are 1-64 letters, digits, '.', '_', '-' or '@'")
         if role not in ROLES:
@@ -191,6 +192,10 @@ class AuthStore:
         raw = self._check_password(password)
         if self.get_user_by_name(username):
             raise AuthError(f"user {username!r} already exists")
+        return raw
+
+    def create_user(self, username: str, password: str, role: str = "reader") -> dict:
+        raw = self.check_new_user(username, password, role)
         row = {"id": uuid.uuid4().hex, "username": username,
                "password_hash": bcrypt.hashpw(raw, bcrypt.gensalt(self.config.bcrypt_rounds)).decode(),
                "role": role, "created_at": now_iso(), "password_changed_at": None}
@@ -251,15 +256,20 @@ class AuthStore:
 
     # ---- sessions ----
     def create_session(self, user: dict) -> dict:
+        session = self.open_session(user)
+        return {"token": session["token"], "expires_at": session["expires_at"]}
+
+    def open_session(self, user: dict, hours: Optional[float] = None) -> dict:
+        """A session with its id (``session_id``), for a caller that revokes it itself (the CLI)."""
         sid = uuid.uuid4().hex
         now = time.time()
-        exp = now + self.config.session_hours * 3600
+        exp = now + (self.config.session_hours if hours is None else hours) * 3600
         self.db.run("INSERT INTO sessions(id, user_id, created_at, expires_at) VALUES(?,?,?,?)",
                     (sid, user["id"], now, exp))
         self.db.run("DELETE FROM sessions WHERE expires_at < ?", (now,))
         token = jwt.encode({"sub": user["id"], "sid": sid, "iat": int(now), "exp": int(exp)},
                            self._secret, algorithm="HS256")
-        return {"token": token,
+        return {"token": token, "session_id": sid,
                 "expires_at": datetime.fromtimestamp(int(exp), timezone.utc).isoformat()}
 
     def revoke_session(self, sid: str) -> None:

@@ -51,6 +51,13 @@ class Config:
     permission_check: bool = True
     permission_cache_seconds: float = 300.0
     permission_timeout_seconds: float = 10.0
+    permission_helper: Path = REPO_DIR / "notes_permission.py"
+    permission_request_timeout_seconds: float = 180.0
+    permission_launch_wait_seconds: float = 20.0
+    security_bin: str = "/usr/bin/security"
+    keychain_service: str = "notes-exporter"
+    generated_password_bytes: int = 24
+    cli_session_minutes: float = 10.0
     exporter: Path = REPO_DIR / "exportnotes.zsh"
     python: str = sys.executable
     exporter_path: str = DEFAULT_EXPORTER_PATH
@@ -81,6 +88,14 @@ class Config:
             permission_check=_bool("NOTES_SERVICE_PERMISSION_CHECK", True),
             permission_cache_seconds=float(_env("NOTES_SERVICE_PERMISSION_CACHE_SECONDS", "300")),
             permission_timeout_seconds=float(_env("NOTES_SERVICE_PERMISSION_TIMEOUT_SECONDS", "10")),
+            permission_helper=Path(_env("NOTES_SERVICE_PERMISSION_HELPER",
+                                        str(REPO_DIR / "notes_permission.py"))).expanduser(),
+            permission_request_timeout_seconds=float(_env("NOTES_SERVICE_PERMISSION_REQUEST_TIMEOUT_SECONDS", "180")),
+            permission_launch_wait_seconds=float(_env("NOTES_SERVICE_PERMISSION_LAUNCH_WAIT_SECONDS", "20")),
+            security_bin=_env("NOTES_SERVICE_SECURITY_BIN", "/usr/bin/security"),
+            keychain_service=_env("NOTES_SERVICE_KEYCHAIN_SERVICE", "notes-exporter"),
+            generated_password_bytes=int(_env("NOTES_SERVICE_GENERATED_PASSWORD_BYTES", "24")),
+            cli_session_minutes=float(_env("NOTES_SERVICE_CLI_SESSION_MINUTES", "10")),
             exporter=Path(_env("NOTES_SERVICE_EXPORTER", str(REPO_DIR / "exportnotes.zsh"))).expanduser(),
             python=_env("NOTES_SERVICE_PYTHON", sys.executable),
             exporter_path=_env("NOTES_SERVICE_EXPORTER_PATH", DEFAULT_EXPORTER_PATH),
@@ -125,3 +140,14 @@ class Config:
 
     def is_loopback_bind(self) -> bool:
         return self.host in LOOPBACK_HOSTS
+
+    def local_url(self) -> str:
+        """Where a command on this Mac reaches the service (loopback even for a wildcard bind)."""
+        host = self.host
+        if host in ("0.0.0.0", "", "localhost"):
+            host = "127.0.0.1"
+        elif host == "::":
+            host = "::1"
+        if ":" in host:
+            host = f"[{host}]"
+        return f"http://{host}:{self.port}"

@@ -83,8 +83,11 @@ async function loadStatus() {
   add('Next run', s.next_run_at ? when(s.next_run_at) : (s.schedule.enabled ? '—' : 'not scheduled'));
   add('Export folder', `${s.export_root} ${s.export_root_ok ? '' : '(not there yet / not writable)'}`);
   add('Formats', s.formats.join(', '));
-  add('Notes automation', s.permission.automation + (s.permission.automation === 'prompt'
-    ? ' — run one export while at the Mac and click Allow' : ''));
+  const auto = s.permission.automation || '';
+  const askable = auto === 'prompt' || auto === 'not-running' || auto.startsWith('unknown');
+  add('Notes automation', auto + (askable ? ' — ask for access below, while at the Mac' : '')
+    + (auto === 'denied' ? ' — turn it on in System Settings → Privacy & Security → Automation' : ''));
+  $('#permission-row').hidden = !(askable && me.scopes.includes('admin'));
   add('Full Disk Access', s.permission.full_disk_access === null ? 'unknown' : (s.permission.full_disk_access ? 'yes' : 'no (only needed for tags)'));
   $('#run-now').hidden = !!s.running_run_id || !me.scopes.includes('run');
   $('#run-cancel').hidden = !s.running_run_id || !me.scopes.includes('run');
@@ -99,6 +102,21 @@ async function loadStatus() {
   }
   if (s.running_run_id) watch(s.running_run_id);
   else if (!watching && runs[0]) watch(runs[0].id);
+}
+
+async function askPermission() {
+  const btn = $('#ask-permission');
+  btn.disabled = true;
+  $('#permission-note').textContent = 'macOS will show a dialog on this Mac — click Allow';
+  try {
+    const r = await api('POST', '/admin/permission/request');
+    $('#permission-note').textContent = r.automation === 'allowed' ? 'Allowed.' : `Still ${r.automation}.`;
+    await loadStatus();
+  } catch (e) {
+    $('#permission-note').textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function describe(ev) {
@@ -288,6 +306,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => selectTab(b.dataset.tab)));
   $('#run-now').addEventListener('click', runNow);
   $('#run-cancel').addEventListener('click', cancelRun);
+  $('#ask-permission').addEventListener('click', askPermission);
   $('#settings-form').addEventListener('submit', saveSettings);
   $('#user-form').addEventListener('submit', addUser);
   $('#key-form').addEventListener('submit', addKey);

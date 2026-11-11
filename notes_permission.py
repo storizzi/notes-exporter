@@ -2,7 +2,14 @@
 """Can this process send Apple Events to Notes, without asking the user?
 
 Uses AEDeterminePermissionToAutomateTarget with askUserIfNeeded=false, so it
-never shows the macOS "wants to control Notes" prompt. The answer applies to
+never shows the macOS "wants to control Notes" prompt.
+
+With ``--ask`` it asks instead (askUserIfNeeded=true): macOS shows its
+"wants to control Notes" dialog on this Mac and the call waits for the answer.
+If Notes isn't running it is opened in the background (``open -g -j -b
+com.apple.Notes``) and the question repeated for up to ``--wait`` seconds
+(NOTES_PERMISSION_LAUNCH_WAIT_SECONDS, default 20). Only run --ask when
+someone is at the Mac to click Allow. The answer applies to
 the app responsible for this process (Terminal, iTerm, a launchd job, the
 app that started the exporter...), which is the same one osascript runs as.
 
@@ -14,9 +21,13 @@ Prints one word and exits with:
     5 unknown       - the check itself failed (not macOS, API missing)
 """
 
+import argparse
 import ctypes
 import ctypes.util
+import os
+import subprocess
 import sys
+import time
 
 NOTES_BUNDLE_ID = b"com.apple.Notes"
 
@@ -41,7 +52,7 @@ class _AEDesc(ctypes.Structure):
     _fields_ = [("descriptorType", ctypes.c_uint32), ("dataHandle", ctypes.c_void_p)]
 
 
-def check(bundle_id: bytes = NOTES_BUNDLE_ID) -> int:
+def check(bundle_id: bytes = NOTES_BUNDLE_ID, ask: bool = False) -> int:
     """Return the OSStatus of the permission check (see RESULTS)."""
     path = ctypes.util.find_library("CoreServices")
     if not path:
@@ -54,7 +65,7 @@ def check(bundle_id: bytes = NOTES_BUNDLE_ID) -> int:
     try:
         fn = cs.AEDeterminePermissionToAutomateTarget
         fn.restype = ctypes.c_int32
-        return fn(ctypes.byref(desc), _fourcc("****"), _fourcc("****"), ctypes.c_bool(False))
+        return fn(ctypes.byref(desc), _fourcc("****"), _fourcc("****"), ctypes.c_bool(ask))
     finally:
         cs.AEDisposeDesc(ctypes.byref(desc))
 
@@ -63,9 +74,39 @@ def describe(status: int):
     return RESULTS.get(status, (f"unknown({status})", 5))
 
 
-def main() -> int:
+def launch_notes() -> None:
+    """Open Notes in the background, without bringing it forward."""
+    opener = os.environ.get("NOTES_PERMISSION_OPEN", "/usr/bin/open")
+    subprocess.run([opener, "-g", "-j", "-b", NOTES_BUNDLE_ID.decode()], capture_output=True, timeout=30,
+                   stdin=subprocess.DEVNULL)
+
+
+def ask(wait_seconds: float, poll_seconds: float, checker=check, launcher=launch_notes,
+        clock=time.monotonic, sleep=time.sleep) -> int:
+    """Ask (showing the macOS dialog if needed); open Notes first if it isn't running."""
+    status = checker(ask=True)
+    if status != PROC_NOT_FOUND:
+        return status
+    launcher()
+    end = clock() + wait_seconds
+    while clock() < end:
+        sleep(poll_seconds)
+        status = checker(ask=True)
+        if status != PROC_NOT_FOUND:
+            break
+    return status
+
+
+def main(argv=None) -> int:
+    p = argparse.ArgumentParser(description="Check (or with --ask, request) permission to automate Notes")
+    p.add_argument("--ask", action="store_true", help="let macOS show its dialog (someone must click Allow)")
+    p.add_argument("--wait", type=float, default=float(os.environ.get("NOTES_PERMISSION_LAUNCH_WAIT_SECONDS") or 20),
+                   help="with --ask: seconds to wait for Notes to start")
+    p.add_argument("--poll", type=float, default=float(os.environ.get("NOTES_PERMISSION_POLL_SECONDS") or 0.5))
+    args = p.parse_args(argv)
     try:
-        word, code = describe(check())
+        status = ask(args.wait, args.poll) if args.ask else check()
+        word, code = describe(status)
     except Exception as e:  # not macOS, or the API is unavailable
         print(f"unknown ({e})")
         return 5

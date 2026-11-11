@@ -26,6 +26,8 @@ import pytest
 
 REPO = Path(__file__).resolve().parent.parent.parent
 FAKE_EXPORTER = REPO / "tests" / "service" / "fake_exporter.py"
+FAKE_PERMISSION = REPO / "tests" / "service" / "fake_permission.py"
+FAKE_SECURITY = REPO / "tests" / "service" / "fake_security.py"
 PASSWORD = "correct horse battery"
 
 
@@ -79,7 +81,12 @@ def server(tmp_path):
                "NOTES_SERVICE_PYTHON": sys.executable, "NOTES_SERVICE_HOME": str(tmp_path / "state"),
                "NOTES_SERVICE_PORT": str(port), "NOTES_SERVICE_BCRYPT_ROUNDS": "4",
                "NOTES_SERVICE_SCHEDULER": "false", "NOTES_SERVICE_PERMISSION_CHECK": "false",
-               "NOTES_SERVICE_CANCEL_GRACE_SECONDS": "2"}
+               "NOTES_SERVICE_CANCEL_GRACE_SECONDS": "2",
+               # Safety: a permission check or Keychain call reaches the fakes, never macOS.
+               "NOTES_SERVICE_PERMISSION_HELPER": str(FAKE_PERMISSION),
+               "NOTES_SERVICE_SECURITY_BIN": str(FAKE_SECURITY),
+               "FAKE_SECURITY_STORE": str(tmp_path / "keychain.json"),
+               "FAKE_SECURITY_LOG": str(tmp_path / "security.log")}
         env.update(extra_env or {})
         cli(env, "user", "add", "simon", "--admin", "--password-stdin", stdin=PASSWORD + "\n")
         out = cli(env, "apikey", "create", "--name", "e2e", "--scopes", "read,run,admin")

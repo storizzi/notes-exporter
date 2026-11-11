@@ -339,10 +339,11 @@ class RunManager:
                     message = result.get("message")
             write_live()
             fields = dict(status=status, exit_code=code, finished_at=now_iso(), message=message)
-            self.store.update(active.run_id, **fields)
             manifest_seq = self._manifest_sequence()
             if manifest_seq is not None:
-                self.store.update(active.run_id, manifest_sequence=manifest_seq)
+                fields["manifest_sequence"] = manifest_seq
+            # One write, so nobody sees a finished run without its manifest sequence.
+            self.store.update(active.run_id, **fields)
         except Exception as e:  # never leave a run "running"
             self.store.update(active.run_id, status="failed", finished_at=now_iso(),
                               message=f"the service lost track of the run: {e}")

@@ -16,7 +16,7 @@ from . import API_VERSION, MANIFEST_VERSION, __version__
 from .auth import ROLES, AuthError, AuthStore, LoginLimiter, Principal
 from .config import Config
 from .exports import ExportReader, PathRefused, content_type, iter_file, parse_range
-from .permissions import PermissionChecker
+from .permissions import PermissionChecker, PermissionRequestBusy
 from .runs import RunBusy, RunError, RunManager, RunStore, read_events
 from .scheduler import Scheduler
 from .settings import RUN_FORMATS, SettingsError, SettingsStore
@@ -400,6 +400,19 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
             return ctx.settings.update(changes).model_dump()
         except SettingsError as e:
             raise HTTPException(422, str(e))
+
+    @app.get("/api/admin/permission")
+    def get_permission(refresh: bool = False, p: Principal = Depends(need("admin"))):
+        return dict(ctx.permissions.get(refresh=refresh), requesting=ctx.permissions.requesting)
+
+    @app.post("/api/admin/permission/request")
+    def request_permission(p: Principal = Depends(need("admin"))):
+        # A sync endpoint, so it waits in the thread pool while macOS shows its dialog.
+        try:
+            result = ctx.permissions.request()
+        except PermissionRequestBusy as e:
+            raise HTTPException(409, str(e))
+        return {k: result.get(k) for k in ("automation", "full_disk_access", "checked_at")}
 
     @app.get("/api/admin/users")
     def users(p: Principal = Depends(need("admin"))):

@@ -19,17 +19,26 @@ from notes_service.config import Config  # noqa: E402
 from notes_service.permissions import PermissionChecker  # noqa: E402
 
 FAKE_EXPORTER = HERE / "fake_exporter.py"
+FAKE_PERMISSION = HERE / "fake_permission.py"
+FAKE_SECURITY = HERE / "fake_security.py"
 PASSWORD = "correct horse battery"
 
 
 @pytest.fixture(autouse=True)
 def isolated_env(tmp_path, monkeypatch):
     for name in list(os.environ):
-        if name.startswith(("NOTES_SERVICE_", "NOTES_EXPORT_", "FAKE_EXPORTER_")):
+        if name.startswith(("NOTES_SERVICE_", "NOTES_EXPORT_", "FAKE_EXPORTER_", "FAKE_PERMISSION_",
+                            "FAKE_SECURITY_", "NOTES_PERMISSION_")):
             monkeypatch.delenv(name, raising=False)
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    # Safety: whatever a test builds from the environment asks fakes, never Apple Events or the Keychain.
+    monkeypatch.setenv("NOTES_SERVICE_PERMISSION_HELPER", str(FAKE_PERMISSION))
+    monkeypatch.setenv("NOTES_SERVICE_SECURITY_BIN", str(FAKE_SECURITY))
+    monkeypatch.setenv("NOTES_SERVICE_PYTHON", sys.executable)
+    monkeypatch.setenv("FAKE_SECURITY_STORE", str(tmp_path / "keychain.json"))
+    monkeypatch.setenv("FAKE_SECURITY_LOG", str(tmp_path / "security.log"))
     return home
 
 
@@ -40,7 +49,8 @@ def make_config(tmp_path):
                         exporter=FAKE_EXPORTER, python=sys.executable, cancel_grace_seconds=1.0,
                         exporter_path=f"{Path(sys.executable).parent}:/usr/bin:/bin",
                         pass_env=["FAKE_EXPORTER_MODE", "FAKE_EXPORTER_SECONDS", "FAKE_EXPORTER_ARGS_FILE"],
-                        progress_write_seconds=0.0, login_max_attempts=3, bcrypt_rounds=4)
+                        progress_write_seconds=0.0, login_max_attempts=3, bcrypt_rounds=4,
+                        permission_helper=FAKE_PERMISSION, security_bin=str(FAKE_SECURITY))
         defaults.update(kw)
         return Config(**defaults)
     return make

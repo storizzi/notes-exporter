@@ -1,6 +1,6 @@
 'use strict';
 // notes-exporter's test tiers, for the common ikt runner (@storizzi/ikt/runtime/tiers in the
-// sibling apps/server/ikt repo). Nothing here reaches Apple Notes, launchd or a real export:
+// sibling apps/server/ikt repo). Nothing but the opt-in `live` tier reaches Apple Notes, launchd or a real export:
 // every exporter run uses tests/fake_osascript.py or tests/service/fake_exporter.py, and every
 // test works in its own temporary HOME and export folder.
 //
@@ -47,6 +47,13 @@ module.exports = (ikt) => {
         skip: () => noPython() || (!ikt.ok('command -v epubcheck') ? 'epubcheck not installed' : null),
         run: pytest(['tests/test_epub.py', '-k', 'epubcheck'], 'pytest-epubcheck.xml'),
         junit: ['test-results/pytest-epubcheck.xml'],
+      },
+      {
+        // Opt in: this one DOES read the real Apple Notes, through the running service.
+        id: 'live', label: 'Live export through the running service (opt in: NOTES_EXPORTER_LIVE=1; prints counts only)',
+        skip: () => noService() || (process.env.NOTES_EXPORTER_LIVE !== '1'
+          ? 'opt in with NOTES_EXPORTER_LIVE=1 (reads the real Notes through the running service)' : null),
+        run: ikt.cmd(python, [path.join(ikt.root, 'scripts', 'live_check.py')]),
       },
     ],
   };
