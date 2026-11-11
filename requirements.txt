@@ -1,7 +1,11 @@
-beautifulsoup4==4.13.4
-markdownify==1.1.0
-pypandoc==1.15
-pytest
+beautifulsoup4==4.15.0
+markdownify==1.2.3
+pypandoc==1.17
+pytest==9.2.0
+
+# Optional: WebP output for --image-format webp (sips cannot write WebP).
+# Either install Pillow, or cwebp with: brew install webp
+# pillow>=12
 
 # Optional: for AI search with Qdrant (--update-qdrant, --ai-search)
 # No pip install needed for Qdrant - uses REST API via stdlib
