@@ -25,7 +25,9 @@ Nothing changes for the command line or the nightly job. `requirements.txt` gain
 * **Runs**: one at a time; `exportnotes.zsh --json-log --non-interactive` in a clean environment, never with `--sync`; progress and counts from the events; cancel stops the whole process group (SIGTERM, then SIGKILL after a grace period); records in sqlite. A run can ask for extra formats (`formats`, a union with the settings) and for folder books.
 * **Schedule**: every N minutes or daily at HH:MM; a time missed while the Mac slept runs once; skipped while a run is in progress.
 * **Web page** at `/`: first-run setup, sign-in, status, Run now, live run log, settings, users, API keys (new key shown once with a Copy button, revoke).
-* **`notes-exporter`** command: `serve`, `user add|list|passwd|remove`, `apikey create|list|revoke`, `service install|uninstall|status` for the `com.storizzi.notes-exporter` LaunchAgent (refuses while the old `com.<user>.notes_exporter` job exists, unless `--replace-legacy`).
+* **`notes-exporter`** command: `serve`, `user add|list|passwd|remove`, `apikey create|list|revoke`, `permission status|request`, `service install|uninstall|status` for the `com.storizzi.notes-exporter` LaunchAgent (refuses while the old `com.<user>.notes_exporter` job exists, unless `--replace-legacy`).
+* **Setup without copying secrets**: `user add|passwd --generate-password --keychain` makes a strong password and stores it in the login Keychain (through `security -i` on stdin, read back to check; never printed, never on a command line); `apikey create --env-file PATH [--env-var NAME] [--replace]` writes the key into another program's env file (other lines kept byte for byte, mode 0600, atomic), shows only its prefix, and with `--replace` revokes the older keys of that name.
+* **Asking for the Notes permission**: `notes_permission.py --ask` lets macOS show its dialog (opening Notes in the background first if needed); the service asks for itself with `POST /api/admin/permission/request` (one at a time, waits up to `NOTES_SERVICE_PERMISSION_REQUEST_TIMEOUT_SECONDS`), from the web page's **Ask macOS for access to Notes** or `notes-exporter permission request`, which signs in with a short session of its own and revokes it afterwards. `GET /api/admin/permission` reports it.
 * Every tunable (port, session hours, rate limit, grace period, scheduler tick, …) is a `NOTES_SERVICE_*` variable.
 
 ### EPUB <!-- omit from toc -->
@@ -39,7 +41,7 @@ Nothing changes for the command line or the nightly job. `requirements.txt` gain
 
 ### Tests <!-- omit from toc -->
 
-* Service tests (TestClient with a fake exporter and a fake launchctl), an end-to-end suite on a real server port (also driving the real `exportnotes.zsh` with the fake osascript), EPUB structure and book tests, and `ikt.project.js` so `ikt test notes-exporter` runs the tiers `unit`, `service`, `e2e` and `epubcheck` (optional).
+* Service tests (TestClient with a fake exporter, a fake launchctl, a fake permission helper and a fake `security`), an end-to-end suite on a real server port (also driving the real `exportnotes.zsh` with the fake osascript), EPUB structure and book tests, and `ikt.project.js` so `ikt test notes-exporter` runs the tiers `unit`, `service`, `e2e` and `epubcheck` (optional), plus the opt-in `live` tier (`NOTES_EXPORTER_LIVE=1`: one real export through the running service, checked file by file against the manifest, counts only).
 
 ## Unreleased - Release 1.4.0 - Nested Folders, Manifest & Reliable Incremental Export
 

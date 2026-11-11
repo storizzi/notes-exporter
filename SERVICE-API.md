@@ -13,7 +13,7 @@ manifest version 1.
 - [Quick start](#quick-start)
 - [Running it](#running-it)
   - [The LaunchAgent](#the-launchagent)
-  - [macOS permissions (first supervised run)](#macos-permissions-first-supervised-run)
+  - [macOS permissions](#macos-permissions)
   - [Configuration (environment)](#configuration-environment)
 - [Authentication](#authentication)
 - [Endpoints](#endpoints)
@@ -33,15 +33,30 @@ manifest version 1.
 cd notes-exporter
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
-./notes-exporter user add simon --admin          # asks for a password
-./notes-exporter serve                           # http://127.0.0.1:8790/
+# 1. The first admin, with a generated password kept in your login Keychain
+./notes-exporter user add simon --admin --generate-password --keychain
+
+# 2. Start the service (http://127.0.0.1:8790/)
+./notes-exporter serve
+
+# 3. In another terminal, at the Mac: let the service automate Notes (click Allow)
+./notes-exporter permission request
+
+# 4. A key for FunHoard, written straight into its env file (never printed)
+./notes-exporter apikey create --name FunHoard --scopes read,run \
+    --env-file ~/dev/storizzi/repos/apps/desktop/media-server/backend/.env --env-var NOTES_EXPORTER_API_KEY
+
+# 5. Keep it running after you log in (stop the `serve` from step 2 first)
+./notes-exporter service install --replace-legacy
+./notes-exporter permission request     # again: now it is the LaunchAgent's process that asks
 ```
 
-Open <http://127.0.0.1:8790/>, sign in, check **Settings** (export folder,
-formats, schedule), then press **Run now** while you are at the Mac (see
-[permissions](#macos-permissions-first-supervised-run)). For another program,
-create an API key under **API keys** (or `./notes-exporter apikey create --name
-FunHoard --scopes read,run`) and send it as `Authorization: Bearer ne_…`.
+The password is in the Passwords app (or Keychain Access) under
+`notes-exporter`; sign in to the web page with it, and check **Settings**
+(export folder, formats, schedule). Step 3 belongs to whichever process runs the
+exporter: a `serve` started in Terminal asks as Terminal, the LaunchAgent asks as
+itself, so ask again after installing it ([permissions](#macos-permissions)).
+The web page has the same button: **Ask macOS for access to Notes**.
 
 With no user yet you can also create the first admin on the web page, but only
 from the Mac itself (a loopback connection).
@@ -51,11 +66,46 @@ from the Mac itself (a loopback connection).
 ```
 notes-exporter serve [--host HOST] [--port PORT] [--allow-remote]
 notes-exporter user add NAME [--admin | --role admin|reader] [--password-stdin]
-notes-exporter user list | passwd NAME | remove NAME
+                              [--generate-password --keychain [--keychain-service NAME]]
+notes-exporter user passwd NAME [--password-stdin | --generate-password --keychain [--keychain-service NAME]]
+notes-exporter user list | remove NAME
 notes-exporter apikey create --name NAME [--scopes read,run,admin] [--owner USER] [--expires-days N]
+                             [--env-file PATH [--env-var NAME]] [--replace]
 notes-exporter apikey list | revoke ID|PREFIX
+notes-exporter permission status [--refresh] | request   [--as ADMIN] [--here]
 notes-exporter service install [--replace-legacy] [--dry-run] | uninstall | status [--json]
 ```
+
+**Generated passwords.** `--generate-password` makes a random password (from
+`secrets`, never starting with `-`) and needs `--keychain`, because it is never
+printed. `--keychain` stores the password (generated or typed) in your login
+Keychain as a generic password, service `notes-exporter`
+(`--keychain-service`, `NOTES_SERVICE_KEYCHAIN_SERVICE`), account the user name,
+label `notes-exporter (NAME)`: it is handed to `security -i` on its standard
+input (never on a command line, where `ps` would show it) and read back to make
+sure it is there. If the Keychain refuses, the user isn't created (or the
+password isn't changed). Find it in the Passwords app.
+
+**Keys into an env file.** `--env-file PATH` writes the new key into PATH as
+`NOTES_EXPORTER_API_KEY=ne_…` (`--env-var` for another name, `[A-Z_][A-Z0-9_]*`)
+instead of printing it: an existing `NAME=` or `export NAME=` line is replaced
+in place (later duplicates dropped), else the line is appended; every other line
+is kept byte for byte; the file is rewritten through a temporary file in the
+same directory and left at mode 0600 (created 0600 if missing). The output shows
+only the key's prefix. If the file can't be written the key is revoked again.
+`--replace` then revokes the owner's other keys with the same name, so running
+the same command again rotates the key.
+
+**The Notes permission.** `permission request` asks the **running service** to
+ask macOS (`POST /api/admin/permission/request`), because the grant belongs to
+the process that asks; `permission status` shows what the service may do
+(`--refresh` checks again now). Both sign in as an admin with a session made
+from `auth.sqlite` for `NOTES_SERVICE_CLI_SESSION_MINUTES` (default 10) and
+revoked when the command ends; `--as` names the admin when there is more than
+one. With no service running they say "start the service first". `--here`
+checks or asks for the program running the command instead (your terminal),
+which is what a manual `exportnotes.zsh` run needs, not the service. Exit codes:
+0 allowed, 3 not allowed, 2 no service, 1 an error.
 
 `notes-exporter` (in the repository root) runs `python -m notes_service` with
 `NOTES_SERVICE_PYTHON`, else `.venv/bin/python`, else `python3`.
@@ -98,30 +148,33 @@ do, unloads the old job and moves its plist to
 in `~/Library/LaunchAgents/` to restore it). Then set a schedule in the
 service's settings (for example daily at `00:13`).
 
-### macOS permissions (first supervised run)
+### macOS permissions
 
 * **Automation (required).** macOS asks once whether the process running the
-  export may control Notes. Under the LaunchAgent that is the service's Python,
-  and there may be nobody at the Mac to click Allow; the service always runs the
-  exporter with `--non-interactive`, so an unanswered prompt fails the run with
-  exit code 3 instead of hanging. `GET /api/status` reports
-  `permission.automation` using `notes_permission.py`, which asks macOS **without
-  prompting**: `allowed`, `prompt` (macOS would ask), `denied`, `not-running`
-  (Notes is not open, macOS can't tell) or `unknown(…)`.
+  export may control Notes; the grant belongs to that process (Terminal for a
+  `serve` started in Terminal, the service's own Python under the LaunchAgent).
+  Under the LaunchAgent there may be nobody at the Mac to click Allow; the
+  service always runs the exporter with `--non-interactive`, so an unanswered
+  prompt fails the run with exit code 3 instead of hanging. `GET /api/status`
+  reports `permission.automation` using `notes_permission.py`, which asks macOS
+  **without prompting**: `allowed`, `prompt` (macOS would ask), `denied`,
+  `not-running` (Notes is not open, macOS can't tell) or `unknown(…)`.
 
-  To grant it: with the service running (installed or `notes-exporter serve`),
-  sit at the Mac, open the web page and press **Run now**. If the run fails with
-  "Notes automation is not allowed…", run the exporter once by hand with the same
-  Python so macOS shows the prompt, and click **Allow**:
+  To grant it, sit at the Mac with the service running and either press **Ask
+  macOS for access to Notes** on the web page's Status tab (shown to admins
+  while automation is `prompt`, `not-running` or unknown) or run
+  `notes-exporter permission request`. The service runs
+  `notes_permission.py --ask` (AEDeterminePermissionToAutomateTarget with
+  askUserIfNeeded=true; Notes is first opened in the background with
+  `open -g -j -b com.apple.Notes` if it isn't running), macOS shows its dialog,
+  and you click **Allow**. The request waits up to
+  `NOTES_SERVICE_PERMISSION_REQUEST_TIMEOUT_SECONDS` (180) for the answer, then
+  checks again. Do it again after `service install`, since the LaunchAgent is a
+  different process from a `serve` in Terminal.
 
-  ```bash
-  .venv/bin/python -c 'import subprocess; subprocess.run(["osascript", "-e", "tell application \"Notes\" to count notes"])'
-  ```
-
-  (That is the service's interpreter asking Notes for a number; it changes
-  nothing.) Then check *System Settings > Privacy & Security > Automation*: the
-  Python (or Terminal) entry should have **Notes** ticked. A denied entry can be
-  re-enabled there.
+  A refused permission can't be asked for again: re-enable it in *System
+  Settings > Privacy & Security > Automation* (the Python or Terminal entry,
+  **Notes** ticked).
 * **Full Disk Access (only for tags).** `--tags` reads Notes' database, which
   needs Full Disk Access for the same Python. `permission.full_disk_access` is
   `true` / `false` (checked by opening the TCC database read-only, which never
@@ -148,6 +201,13 @@ program runs and with which environment can only be set here, never over HTTP.
 | `NOTES_SERVICE_MIN_INTERVAL_MINUTES` | `5` | smallest allowed `interval_minutes` |
 | `NOTES_SERVICE_PERMISSION_CHECK` | `true` | report `permission` (false: `unchecked`) |
 | `NOTES_SERVICE_PERMISSION_CACHE_SECONDS`, `NOTES_SERVICE_PERMISSION_TIMEOUT_SECONDS` | `300`, `10` | |
+| `NOTES_SERVICE_PERMISSION_HELPER` | `<repo>/notes_permission.py` | the permission helper (tests use a fake) |
+| `NOTES_SERVICE_PERMISSION_REQUEST_TIMEOUT_SECONDS` | `180` | how long a permission request waits for someone to click Allow |
+| `NOTES_SERVICE_PERMISSION_LAUNCH_WAIT_SECONDS` | `20` | how long a request waits for Notes to start |
+| `NOTES_SERVICE_SECURITY_BIN` | `/usr/bin/security` | the Keychain tool (tests use a fake) |
+| `NOTES_SERVICE_KEYCHAIN_SERVICE` | `notes-exporter` | the Keychain item's service name |
+| `NOTES_SERVICE_GENERATED_PASSWORD_BYTES` | `24` | random bytes in a generated password (32 characters) |
+| `NOTES_SERVICE_CLI_SESSION_MINUTES` | `10` | the `permission` command's own short session |
 | `NOTES_SERVICE_EXPORTER` | `<repo>/exportnotes.zsh` | the exporter to run |
 | `NOTES_SERVICE_PYTHON` | the service's own Python | passed to the exporter as `--python` |
 | `NOTES_SERVICE_EXPORTER_PATH` | `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin` | `PATH` of the exporter's clean environment |
@@ -364,6 +424,14 @@ password_changed_at}]}`; `POST {username, password, role}` → 201 (409 if the
 name is taken); `PATCH /api/admin/users/{id} {role?, password?}`;
 `DELETE /api/admin/users/{id}`. 409 for the last admin.
 
+Permission: `GET /api/admin/permission[?refresh=true]` → `{automation,
+full_disk_access, checked_at, requesting}` (never prompts).
+`POST /api/admin/permission/request` makes macOS show its "wants to control
+Notes" dialog on the Mac and waits for the answer (up to
+`NOTES_SERVICE_PERMISSION_REQUEST_TIMEOUT_SECONDS`), then checks again and
+answers `{automation, full_disk_access, checked_at}`; 409 while another request
+is waiting. Only call it when someone is at the Mac.
+
 API keys: `GET /api/admin/api-keys` → `{api_keys:[{id, name, prefix, scopes,
 owner_user_id, created_at, last_used_at, expires_at}]}`; `POST {name, scopes,
 owner_user_id?, expires_at?}` → 201 `{api_key, key}` — **`key` is only ever in
@@ -415,4 +483,40 @@ The service never writes to Apple Notes: it never passes `--sync` or
 Its tests never touch real Notes or the real export folder: the exporter is
 `tests/service/fake_exporter.py`, or the real `exportnotes.zsh` with
 `tests/fake_osascript.py` first on its `PATH`, every test in its own temporary
-`HOME`, and the LaunchAgent tests use a fake `launchctl`.
+`HOME`, and the LaunchAgent tests use a fake `launchctl`. The permission tests
+use a fake `notes_permission.py` (`tests/service/fake_permission.py`) and the
+Keychain tests a fake `security` (`tests/service/fake_security.py`), so no test
+shows a macOS dialog or touches your Keychain.
+
+### The live check (opt in)
+
+`ikt test notes-exporter live` (or `scripts/live_check.py`) does one real export
+through the **running** service, so it reads your real Notes; it is skipped
+unless `NOTES_EXPORTER_LIVE=1`, is never part of the required tiers, and prints
+counts only (never a title, folder or path):
+
+```bash
+NOTES_EXPORTER_LIVE=1 \
+NOTES_EXPORTER_LIVE_ENV_FILE=~/dev/storizzi/repos/apps/desktop/media-server/backend/.env \
+  ikt test notes-exporter live
+```
+
+It checks `/api/health`; if Notes automation isn't allowed, asks for it (macOS
+shows its dialog on the Mac: click Allow) — which needs a key with the admin
+scope (`apikey create --scopes read,run,admin …`); otherwise press the web
+page's button first. Then it starts a run (trigger `cli`), follows it, requires
+`ok` or `partial`, checks the manifest's format and version, downloads every
+output and book to compare its SHA-256 and size, and checks every attachment
+exists with its size.
+
+| Variable | Default | |
+|---|---|---|
+| `NOTES_EXPORTER_LIVE` | — | must be `1` |
+| `NOTES_EXPORTER_LIVE_URL` | `http://127.0.0.1:8790` | the service |
+| `NOTES_EXPORTER_API_KEY` | — | the key, else… |
+| `NOTES_EXPORTER_LIVE_ENV_FILE` | — | …an env file to read only `NOTES_EXPORTER_API_KEY` from |
+| `NOTES_EXPORTER_LIVE_MODE` | `incremental` | or `full` |
+| `NOTES_EXPORTER_LIVE_TIMEOUT_SECONDS`, `NOTES_EXPORTER_LIVE_POLL_SECONDS` | `3600`, `2` | |
+
+Its logic is tested against a service with the fake exporter and fake
+permission helper (`tests/e2e/test_permission_and_live_e2e.py`).

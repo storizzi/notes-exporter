@@ -30,7 +30,7 @@ Configure scheduled automatic exports via macOS launchd (the older way; the serv
 
 ### notes-exporter (the service)
 
-`notes-exporter serve` runs the HTTP service (`notes_service/`): it runs and schedules exports and serves the manifest and files to other programs with users, sessions and API keys. `notes-exporter user …`, `apikey …` and `service install|uninstall|status` (the `com.storizzi.notes-exporter` LaunchAgent) manage it. Everything is in [SERVICE-API.md](SERVICE-API.md).
+`notes-exporter serve` runs the HTTP service (`notes_service/`): it runs and schedules exports and serves the manifest and files to other programs with users, sessions and API keys. `notes-exporter user …` (`--generate-password --keychain` keeps a generated password in the login Keychain), `apikey …` (`--env-file` writes the key into another program's env file), `permission status|request` (the running service asks macOS for access to Notes) and `service install|uninstall|status` (the `com.storizzi.notes-exporter` LaunchAgent) manage it. Everything is in [SERVICE-API.md](SERVICE-API.md).
 
 ### convert_to_epub.py, build_epub_books.py
 
@@ -676,7 +676,7 @@ notes-exporter/
   export_layout.py             # Where a note's files live (shared by prune and manifest)
   prune_deleted.py             # Removes moved notes' old copies, and deleted notes' files
   notes_db.py                  # --tags: tags / pinned / checklists from a copy of the Notes database
-  notes_permission.py          # Automation permission check that never prompts
+  notes_permission.py          # Automation permission check that never prompts (--ask: let macOS ask)
   reorganize_by_folder.py      # Moves an existing flat export into nested folders
   VERSION                      # Tool version
   query_notes.py               # Search tool
@@ -690,7 +690,7 @@ notes-exporter/
   convert_to_epub.py           # HTML to EPUB 3, one per note
   build_epub_books.py          # One EPUB per Notes folder
   epub_builder.py              # EPUB packaging shared by both (standard-library zipfile)
-  notes-exporter               # The service's command: serve, user, apikey, service
+  notes-exporter               # The service's command: serve, user, apikey, permission, service
   notes_service/               # The HTTP service (SERVICE-API.md)
     app.py                     # FastAPI app: endpoints, auth dependencies, web UI
     auth.py                    # Users (bcrypt), sessions (JWT), API keys (SHA-256), login limit
@@ -698,12 +698,15 @@ notes-exporter/
     scheduler.py               # Interval / daily schedule
     settings.py                # service.json and the exporter command line
     exports.py                 # Manifest ETag, note queries, file containment and Range
-    permissions.py             # Automation / Full Disk Access checks that never prompt
+    permissions.py             # Automation / Full Disk Access checks; the one permission request
+    keychain.py                # Generated passwords into the login Keychain (security -i on stdin)
+    envfile.py                 # apikey create --env-file: one NAME=value line, 0600, atomic
     launchagent.py             # com.storizzi.notes-exporter LaunchAgent
     cli.py, config.py, db.py   # Command line, NOTES_SERVICE_* settings, sqlite helper
     web/                       # index.html, app.js, style.css (no build step)
   ikt.project.js               # Test tiers for ikt test notes-exporter
   scripts/test-all.js          # The same tiers without the ikt command
+  scripts/live_check.py        # The opt-in live tier: one real export through the running service
   requirements.txt             # Python dependencies
   .notes-exporter-settings.json # User settings (gitignored)
   .env                         # Environment variables (gitignored)
@@ -731,7 +734,7 @@ notes-exporter/
     test_applescript_handlers.py # Pure AppleScript handlers (no Notes access)
     fake_osascript.py          # Stand-in for export_notes.scpt in tests
     test_epub.py               # EPUB per note and per folder (structure, images, books)
-    service/                   # Service tests (TestClient, fake exporter, fake launchctl)
+    service/                   # Service tests (TestClient, fake exporter, launchctl, permission helper, security)
     e2e/                       # The real server on a free port, driven over HTTP
 ```
 
@@ -810,7 +813,7 @@ pytest -m "not integration"       # Everything except integration
 
 ### Tiers (ikt)
 
-`ikt test notes-exporter` (or `node scripts/test-all.js`) runs four tiers: `unit` (everything under `tests/` except the two service folders), `service` (`tests/service`), `e2e` (`tests/e2e`) and `epubcheck` (EPUB validation, skipped unless `epubcheck` is installed). Each writes JUnit XML to `test-results/`.
+`ikt test notes-exporter` (or `node scripts/test-all.js`) runs four tiers: `unit` (everything under `tests/` except the two service folders), `service` (`tests/service`), `e2e` (`tests/e2e`) and `epubcheck` (EPUB validation, skipped unless `epubcheck` is installed). Each writes JUnit XML to `test-results/`. A fifth, `live`, exports the real Notes through the running service and prints counts only; it runs only with `NOTES_EXPORTER_LIVE=1` and is never required (see SERVICE-API.md, "The live check").
 
 ### Test Isolation
 

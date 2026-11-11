@@ -146,13 +146,22 @@ macOS will ask whether your terminal may control Notes on the first run; click A
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-./notes-exporter user add simon --admin       # the first admin (asks for a password)
-./notes-exporter serve                        # http://127.0.0.1:8790/
+./notes-exporter user add simon --admin --generate-password --keychain   # the password goes to your login Keychain
+./notes-exporter serve                                                   # http://127.0.0.1:8790/
+./notes-exporter permission request          # (another terminal, at the Mac) click Allow when macOS asks
+./notes-exporter apikey create --name FunHoard --scopes read,run \
+    --env-file ~/dev/storizzi/repos/apps/desktop/media-server/backend/.env --env-var NOTES_EXPORTER_API_KEY
+./notes-exporter service install --replace-legacy                        # stop the serve above first
+./notes-exporter permission request          # once more: the LaunchAgent asks as its own process
 ```
 
-Open <http://127.0.0.1:8790/>, sign in, set the export folder, formats and schedule under **Settings**, and press **Run now** while you are at the Mac: macOS asks once whether the service may control Notes (click Allow; scheduled runs can't answer that prompt, so they fail with exit code 3 until it is allowed). For another program, create an API key (**API keys**, or `./notes-exporter apikey create --name FunHoard --scopes read,run`) and send it as `Authorization: Bearer ne_…`; keys are never accepted in a URL.
+1. **The first admin.** `--generate-password --keychain` makes a strong password and keeps it in your login Keychain as `notes-exporter` (open the Passwords app to see it); it is never printed. Without them you type one.
+2. **Serve.** Open <http://127.0.0.1:8790/>, sign in, and set the export folder, formats and schedule under **Settings**.
+3. **The Notes permission.** macOS must let the service control Notes. `permission request` (or **Ask macOS for access to Notes** on the web page) makes macOS show its dialog on this Mac; click Allow. The permission belongs to the process that asks, so it is asked by the running service, and asked again once the LaunchAgent runs it. Until it is allowed, scheduled runs fail with exit code 3 rather than wait at a prompt.
+4. **An API key for another program**, written straight into its env file (mode 0600, other lines untouched, only the key's prefix shown); add `--replace` to rotate it later. Programs send it as `Authorization: Bearer ne_…`; keys are never accepted in a URL.
+5. **Keep it running** after you log in: `service install` (a LaunchAgent, `com.storizzi.notes-exporter`). If you scheduled exports with `setup_launchd.py` before, install refuses until that job is gone; `--replace-legacy` unloads it and moves its plist aside (it says what it will do first).
 
-To keep it running after you log in: `./notes-exporter service install` (a LaunchAgent, `com.storizzi.notes-exporter`). If you scheduled exports with `setup_launchd.py` before, install refuses until that job is gone; `--replace-legacy` unloads it and moves its plist aside (it says what it will do first). The service listens on this Mac only unless you pass `--allow-remote`; use a reverse proxy with HTTPS for that. Everything else, the endpoints and the settings are in [SERVICE-API.md](./SERVICE-API.md).
+The service listens on this Mac only unless you pass `--allow-remote`; use a reverse proxy with HTTPS for that. Everything else, the endpoints and the settings are in [SERVICE-API.md](./SERVICE-API.md).
 
 ## Tests
 
@@ -177,6 +186,6 @@ tests/test.zsh           # All tests
 tests/test.zsh search    # Just search tests
 ```
 
-The service has its own tests (`tests/service`, `tests/e2e`), and `ikt test notes-exporter` (or `node scripts/test-all.js`) runs every tier: `unit`, `service`, `e2e` and, when `epubcheck` is installed, `epubcheck`.
+The service has its own tests (`tests/service`, `tests/e2e`), and `ikt test notes-exporter` (or `node scripts/test-all.js`) runs every tier: `unit`, `service`, `e2e` and, when `epubcheck` is installed, `epubcheck`. The `live` tier exports your real Notes through the running service and runs only with `NOTES_EXPORTER_LIVE=1` ([SERVICE-API.md](./SERVICE-API.md#the-live-check-opt-in)).
 
 All tests use isolated temp directories and never touch your live data or Apple Notes: the end-to-end tests of `exportnotes.zsh` use a stand-in for `osascript` (`tests/fake_osascript.py`).
