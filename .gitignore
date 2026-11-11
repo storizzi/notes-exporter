@@ -9,3 +9,4 @@ tests/.pytest_cache/
 .venv/
 *.conflict.md
 .notes-exporter-settings.json
+test-results/
