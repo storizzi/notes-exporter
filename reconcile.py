@@ -101,6 +101,7 @@ def count_disk_files(tracker) -> dict:
         "md": ".md",
         "pdf": ".pdf",
         "docx": ".docx",
+        "epub": ".epub",
     }
     uses_subdirs = tracker._uses_subdirs()
 
@@ -191,7 +192,7 @@ def get_disk_filenames(tracker) -> dict:
     root = Path(tracker.root_directory)
     formats = {
         "raw": ".html", "html": ".html", "text": ".txt",
-        "md": ".md", "pdf": ".pdf", "docx": ".docx",
+        "md": ".md", "pdf": ".pdf", "docx": ".docx", "epub": ".epub",
     }
     uses_subdirs = tracker._uses_subdirs()
     result = defaultdict(lambda: defaultdict(set))
@@ -310,7 +311,7 @@ def find_specific_discrepancies(tracker, disk_files, tracked_notes, qdrant_ids) 
             fn = info.get("filename", "")
             if fn and notebook in disk_files:
                 still_on_disk = []
-                for fmt in ["raw", "md", "html", "pdf", "docx"]:
+                for fmt in ["raw", "md", "html", "pdf", "docx", "epub"]:
                     if fn in disk_files[notebook].get(fmt, set()):
                         still_on_disk.append(fmt)
                 if still_on_disk:
@@ -383,7 +384,7 @@ def run_reconciliation(show_notebooks: bool = False, show_fix: bool = False,
     totals = disk_counts.get("_totals", {})
     disk_counts_for_details = {k: v for k, v in disk_counts.items() if k != "_totals"}
     fmt.emit("count", source="disk", **{k: v for k, v in totals.items()})
-    for fmt_name in ["raw", "html", "text", "md", "pdf", "docx"]:
+    for fmt_name in ["raw", "html", "text", "md", "pdf", "docx", "epub"]:
         count = totals.get(fmt_name, 0)
         if count > 0:
             print(f"  {fmt_name}/: {count} files")

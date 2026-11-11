@@ -275,6 +275,7 @@ def build(root: Path, run_info: dict, live_path: Optional[Path] = None) -> dict:
             skipped.append({"id": err.get("fullNoteId"), "short_id": err.get("noteId"),
                             "reason": "error", "message": err.get("message")})
 
+    books, deleted_books = book_entries(root, previous, cache, sequence)
     cache.save()
     run = dict(run_info)
     run.setdefault("id", str(uuid.uuid4()))
@@ -288,6 +289,7 @@ def build(root: Path, run_info: dict, live_path: Optional[Path] = None) -> dict:
         "deleted": len(deleted),
         "deleted_this_run": sum(1 for d in deleted if d["deleted_this_run"]),
         "skipped": len(skipped),
+        "books": len(books),
     }
     return {
         "format": FORMAT_NAME,
@@ -297,7 +299,37 @@ def build(root: Path, run_info: dict, live_path: Optional[Path] = None) -> dict:
         "notes": notes,
         "deleted": deleted,
         "skipped": skipped,
+        "books": books,
+        "deleted_books": deleted_books,
     }
+
+
+def book_entries(root: Path, previous: dict, cache: "HashCache", sequence: int):
+    """Folder books (build_epub_books.py's state), with hashes and change flags."""
+    state_file = root / "data" / ".epub_books.json"
+    if not state_file.exists():
+        return [], previous.get("deleted_books", [])
+    state = read_json(state_file) or {}
+    prev = {b.get("id"): b for b in previous.get("books", [])}
+    books = []
+    for book_id, b in sorted((state.get("books") or {}).items()):
+        path = root / b.get("path", "")
+        if not b.get("path") or not path.is_file():
+            continue
+        info = cache.file_info(root, path)
+        old = prev.get(book_id)
+        changed = old is None or old.get("sha256") != info["sha256"] or old.get("path") != info["path"] \
+            or old.get("notes") != b.get("notes")
+        books.append({
+            "id": book_id, "account_id": b.get("account_id"), "folder_id": b.get("folder_id"),
+            "folder_path": b.get("folder_path", []), "title": b.get("title"), **info,
+            "notes": b.get("notes", []), "nested_folders": b.get("nested_folders", []),
+            "skipped_notes": b.get("skipped_notes", 0), "fingerprint": b.get("fingerprint"),
+            "changed_this_run": changed,
+            "changed_in_run": sequence if changed else old.get("changed_in_run", sequence),
+        })
+    deleted_books = [dict(d, id=d.get("id") or k) for k, d in sorted((state.get("deleted") or {}).items())]
+    return books, deleted_books
 
 
 def _fingerprint(entry: dict) -> str:

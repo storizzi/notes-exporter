@@ -126,6 +126,7 @@ def process_notebook_data(data_file, root_dir, use_subdirs, subdir_name=None):
             ('md', f"{filename}.md"),
             ('pdf', f"{filename}.pdf"),
             ('docx', f"{filename}.docx"),
+            ('epub', f"{filename}.epub"),
         ]
 
         for format_dir, file_name in file_specs:

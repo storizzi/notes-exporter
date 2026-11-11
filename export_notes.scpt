@@ -666,7 +666,7 @@ on handleFilenameChange(rootDir, subdirPrefix, oldFileName, newFileName)
     if oldFileName is "" or oldFileName is newFileName then return
     log "Filename changed: " & oldFileName & " -> " & newFileName
     set oldPaths to {}
-    repeat with spec in {{"raw", ".html"}, {"html", ".html"}, {"text", ".txt"}, {"md", ".md"}, {"pdf", ".pdf"}, {"docx", ".docx"}}
+    repeat with spec in {{"raw", ".html"}, {"html", ".html"}, {"text", ".txt"}, {"md", ".md"}, {"pdf", ".pdf"}, {"docx", ".docx"}, {"epub", ".epub"}}
         set end of oldPaths to rootDir & (item 1 of spec) & "/" & subdirPrefix & oldFileName & (item 2 of spec)
     end repeat
     my deleteOldFilesSafely(oldPaths, oldFileName)

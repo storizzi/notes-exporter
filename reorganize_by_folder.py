@@ -37,7 +37,7 @@ from tracker_io import tracker_files
 
 SEP = "\t"
 EXTENSIONS = {"md": ".md", "html": ".html", "raw": ".html", "text": ".txt",
-              "pdf": ".pdf", "docx": ".docx"}
+              "pdf": ".pdf", "docx": ".docx", "epub": ".epub"}
 
 FOLDERS_SCRIPT = """
 set out to ""

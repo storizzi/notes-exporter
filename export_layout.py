@@ -14,6 +14,7 @@ FORMATS: Dict[str, Tuple[str, str]] = {
     "md": ("md", ".md"),
     "pdf": ("pdf", ".pdf"),
     "docx": ("docx", ".docx"),
+    "epub": ("epub", ".epub"),
 }
 
 # Format directories that may hold extracted attachments.

@@ -27,6 +27,10 @@ export NOTES_EXPORT_SUPPRESS_CHROME_HEADER_PDF="${NOTES_EXPORT_SUPPRESS_CHROME_H
 export NOTES_EXPORT_CONVERT_TO_MARKDOWN="${NOTES_EXPORT_CONVERT_TO_MARKDOWN:=false}"
 export NOTES_EXPORT_CONVERT_TO_PDF="${NOTES_EXPORT_CONVERT_TO_PDF:=false}"
 export NOTES_EXPORT_CONVERT_TO_WORD="${NOTES_EXPORT_CONVERT_TO_WORD:=false}"
+export NOTES_EXPORT_CONVERT_EPUB="${NOTES_EXPORT_CONVERT_EPUB:=false}"
+export NOTES_EXPORT_EPUB_BOOKS="${NOTES_EXPORT_EPUB_BOOKS:=none}"
+export NOTES_EXPORT_EPUB_BOOK_ORDER="${NOTES_EXPORT_EPUB_BOOK_ORDER:=modified}"
+export NOTES_EXPORT_EPUB_BOOK_SUBFOLDERS="${NOTES_EXPORT_EPUB_BOOK_SUBFOLDERS:=separate}"
 export NOTES_EXPORT_EXTRACT_IMAGES="${NOTES_EXPORT_EXTRACT_IMAGES:=true}"
 export NOTES_EXPORT_EXTRACT_DATA="${NOTES_EXPORT_EXTRACT_DATA:=true}"
 export NOTES_EXPORT_FILENAME_FORMAT="${NOTES_EXPORT_FILENAME_FORMAT:=&title-&id}"
@@ -91,6 +95,11 @@ Output
   -m, --convert-markdown         Convert to Markdown
   -p, --convert-pdf              Convert to PDF (needs Google Chrome)
   -w, --convert-word             Convert to Word (needs Pandoc)
+      --convert-epub             Convert each note to an EPUB 3 book (epub/)
+      --epub-books MODE          none (default) or folder: also one EPUB per Notes folder (epub-books/)
+      --epub-book-order ORDER    Chapters by modified (default) or created, newest first, or title
+      --epub-book-subfolders HOW separate (default: each subfolder its own book) or nested
+                                 (subfolders become parts of their top folder's book)
   -a, --all-formats, --all       Enable all conversions
   -i, --extract-images           Extract images into attachments/ (default: true)
   -d, --extract-data             Read notes from Apple Notes (default: true)
@@ -160,6 +169,10 @@ while [[ $# -gt 0 ]]; do
         --convert-markdown|-m)    bool_opt NOTES_EXPORT_CONVERT_TO_MARKDOWN "$2" ;;
         --convert-pdf|-p)         bool_opt NOTES_EXPORT_CONVERT_TO_PDF "$2" ;;
         --convert-word|-w)        bool_opt NOTES_EXPORT_CONVERT_TO_WORD "$2" ;;
+        --convert-epub)           bool_opt NOTES_EXPORT_CONVERT_EPUB "$2" ;;
+        --epub-books)             value_opt NOTES_EXPORT_EPUB_BOOKS "$1" "$2" ;;
+        --epub-book-order)        value_opt NOTES_EXPORT_EPUB_BOOK_ORDER "$1" "$2" ;;
+        --epub-book-subfolders)   value_opt NOTES_EXPORT_EPUB_BOOK_SUBFOLDERS "$1" "$2" ;;
         --extract-images|-i)      bool_opt NOTES_EXPORT_EXTRACT_IMAGES "$2" ;;
         --extract-data|-d)        bool_opt NOTES_EXPORT_EXTRACT_DATA "$2" ;;
         --suppress-header-pdf|-s) bool_opt NOTES_EXPORT_SUPPRESS_CHROME_HEADER_PDF "$2" ;;
@@ -213,7 +226,7 @@ while [[ $# -gt 0 ]]; do
         --query|-Q)               QUERY_MODE=true; shift; break ;;
         --all-formats|--all|-a)
             export NOTES_EXPORT_CONVERT_TO_MARKDOWN=true NOTES_EXPORT_CONVERT_TO_PDF=true
-            export NOTES_EXPORT_CONVERT_TO_WORD=true NOTES_EXPORT_EXTRACT_IMAGES=true ;;
+            export NOTES_EXPORT_CONVERT_TO_WORD=true NOTES_EXPORT_CONVERT_EPUB=true NOTES_EXPORT_EXTRACT_IMAGES=true ;;
         --version)
             if [[ -n "$NOTES_EXPORT_JSON_LOG" ]]; then
                 print -r -- "{\"type\": \"version\", \"version\": \"${NOTES_EXPORTER_VERSION}\", \"manifest_version\": 1}"
@@ -230,8 +243,13 @@ while [[ $# -gt 0 ]]; do
     shift $OPT_SHIFT
 done
 
+case "$NOTES_EXPORT_EPUB_BOOKS" in none|folder) ;; *) echo "Error: --epub-books must be none or folder." >&2; exit $EXIT_USAGE ;; esac
+case "$NOTES_EXPORT_EPUB_BOOK_ORDER" in modified|created|title) ;; *) echo "Error: --epub-book-order must be modified, created or title." >&2; exit $EXIT_USAGE ;; esac
+case "$NOTES_EXPORT_EPUB_BOOK_SUBFOLDERS" in separate|nested) ;; *) echo "Error: --epub-book-subfolders must be separate or nested." >&2; exit $EXIT_USAGE ;; esac
+
 # Conversions need the processed HTML with extracted images
-if [[ "${NOTES_EXPORT_CONVERT_TO_MARKDOWN}" == "true" || "${NOTES_EXPORT_CONVERT_TO_PDF}" == "true" || "${NOTES_EXPORT_CONVERT_TO_WORD}" == "true" ]]; then
+if [[ "${NOTES_EXPORT_CONVERT_TO_MARKDOWN}" == "true" || "${NOTES_EXPORT_CONVERT_TO_PDF}" == "true" || "${NOTES_EXPORT_CONVERT_TO_WORD}" == "true" \
+      || "${NOTES_EXPORT_CONVERT_EPUB}" == "true" || "${NOTES_EXPORT_EPUB_BOOKS}" == "folder" ]]; then
     export NOTES_EXPORT_EXTRACT_IMAGES=true
 fi
 
@@ -348,6 +366,7 @@ FORMATS=(raw text)
 [[ "$NOTES_EXPORT_CONVERT_TO_MARKDOWN" == "true" ]] && FORMATS+=(md)
 [[ "$NOTES_EXPORT_CONVERT_TO_PDF" == "true" ]] && FORMATS+=(pdf)
 [[ "$NOTES_EXPORT_CONVERT_TO_WORD" == "true" ]] && FORMATS+=(docx)
+[[ "$NOTES_EXPORT_CONVERT_EPUB" == "true" ]] && FORMATS+=(epub)
 
 FORMATS_JSON="[$(printf '"%s",' "${FORMATS[@]}" | sed 's/,$//')]"
 emit_event start version="$NOTES_EXPORTER_VERSION" run_id="$RUN_ID" root_dir="$NOTES_EXPORT_ROOT_DIR" \
@@ -370,7 +389,7 @@ run_step() {
 # ---- Clean ----
 if [[ "${NOTES_EXPORT_CLEAN}" == "true" ]]; then
     echo "Cleaning output directories..."
-    for dir in raw html text md pdf docx; do
+    for dir in raw html text md pdf docx epub epub-books; do
         if [[ -d "${NOTES_EXPORT_ROOT_DIR}/${dir}" ]]; then
             rm -rf "${NOTES_EXPORT_ROOT_DIR}/${dir}"
             echo "  Removed ${dir}/"
@@ -392,6 +411,7 @@ if [[ "${NOTES_EXPORT_SYNC_ONLY}" == "true" ]]; then
     export NOTES_EXPORT_EXTRACT_DATA=false NOTES_EXPORT_EXTRACT_IMAGES=false
     export NOTES_EXPORT_CONVERT_TO_MARKDOWN=false NOTES_EXPORT_CONVERT_TO_PDF=false
     export NOTES_EXPORT_CONVERT_TO_WORD=false NOTES_EXPORT_SET_FILE_DATES=false
+    export NOTES_EXPORT_CONVERT_EPUB=false NOTES_EXPORT_EPUB_BOOKS=none
     export NOTES_EXPORT_SYNC=true
 fi
 
@@ -500,6 +520,14 @@ if [[ "$EXPORT_FAILED" != "true" ]]; then
     if [[ "${NOTES_EXPORT_CONVERT_TO_WORD}" == "true" ]]; then
         echo "Converting to Word..."
         run_step word "$PYTHON" "$SCRIPT_DIR/convert_to_word.py"
+    fi
+    if [[ "${NOTES_EXPORT_CONVERT_EPUB}" == "true" ]]; then
+        echo "Converting to EPUB..."
+        run_step epub "$PYTHON" "$SCRIPT_DIR/convert_to_epub.py"
+    fi
+    if [[ "${NOTES_EXPORT_EPUB_BOOKS}" == "folder" ]]; then
+        echo "Building one EPUB per folder..."
+        run_step books "$PYTHON" "$SCRIPT_DIR/build_epub_books.py" --root "$NOTES_EXPORT_ROOT_DIR"
     fi
     if [[ "${NOTES_EXPORT_SET_FILE_DATES}" == "true" ]]; then
         echo "Setting file dates to match Apple Notes..."

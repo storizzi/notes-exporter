@@ -121,7 +121,7 @@ def main(argv):
             (root / "raw" / prefix / f"{name}.html").write_text(note["html"], encoding="utf-8")
             (root / "text" / prefix / f"{name}.txt").write_text(note.get("text", ""), encoding="utf-8")
             if old and old[1] != name:  # rename: remove the old files, like handleFilenameChange
-                for d, ext in (("raw", ".html"), ("html", ".html"), ("text", ".txt"), ("md", ".md")):
+                for d, ext in (("raw", ".html"), ("html", ".html"), ("text", ".txt"), ("md", ".md"), ("epub", ".epub")):
                     p = root / d / prefix / f"{old[1]}{ext}"
                     if p.exists():
                         p.unlink()
