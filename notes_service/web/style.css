@@ -7,6 +7,9 @@
           --accent: #e0b040; --err: #ff8a80; --ok: #81c784; }
 }
 * { box-sizing: border-box; }
+/* Keep the scroll bar's space even on a short page, so the centred layout (and the tabs)
+   doesn't shift sideways when moving between a short tab and a long one. */
+html { scrollbar-gutter: stable; overflow-y: scroll; }
 body { margin: 0; font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
        background: var(--bg); color: var(--fg); }
 header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
