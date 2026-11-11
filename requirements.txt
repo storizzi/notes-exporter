@@ -3,6 +3,13 @@ markdownify==1.2.3
 pypandoc==1.17
 pytest==9.2.0
 
+# The service (notes-exporter serve, notes_service/)
+fastapi==0.162.4
+uvicorn==0.54.0
+bcrypt==5.0.0
+PyJWT==2.15.1
+httpx==0.28.1          # FastAPI's TestClient, for the service tests
+
 # Optional: WebP output for --image-format webp (sips cannot write WebP).
 # Either install Pillow, or cwebp with: brew install webp
 # pillow>=12

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notes Exporter</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>Notes Exporter</h1>
+  <span id="who"></span>
+  <button id="logout" class="link" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="setup" hidden>
+    <h2>First-time setup</h2>
+    <p>Create the first admin account. This page only works on this Mac.</p>
+    <form id="setup-form">
+      <label>Username <input name="username" autocomplete="username" required></label>
+      <label>Password <input name="password" type="password" autocomplete="new-password" required></label>
+      <button type="submit">Create admin</button>
+    </form>
+    <p class="error" id="setup-error"></p>
+  </section>
+
+  <section id="login" hidden>
+    <h2>Sign in</h2>
+    <form id="login-form">
+      <label>Username <input name="username" autocomplete="username" required></label>
+      <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit">Sign in</button>
+    </form>
+    <p class="error" id="login-error"></p>
+  </section>
+
+  <div id="app" hidden>
+    <nav>
+      <button data-tab="status" class="tab active">Status</button>
+      <button data-tab="settings" class="tab admin-only">Settings</button>
+      <button data-tab="users" class="tab admin-only">Users</button>
+      <button data-tab="keys" class="tab admin-only">API keys</button>
+    </nav>
+
+    <section id="tab-status" class="panel">
+      <div class="card">
+        <dl id="status-list"></dl>
+        <div class="row">
+          <label>Mode <select id="run-mode"><option value="incremental">Changed notes</option><option value="full">Every note</option></select></label>
+          <button id="run-now">Run now</button>
+          <button id="run-cancel" hidden>Cancel run</button>
+        </div>
+        <p class="error" id="run-error"></p>
+      </div>
+      <div class="card">
+        <h3>Run log <span id="log-run"></span></h3>
+        <div id="progress"></div>
+        <pre id="events"></pre>
+      </div>
+      <div class="card">
+        <h3>Recent runs</h3>
+        <table id="runs"><thead><tr><th>Started</th><th>Status</th><th>Trigger</th><th>Notes</th><th>Changed</th><th>Message</th></tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <section id="tab-settings" class="panel" hidden>
+      <form id="settings-form" class="card">
+        <label>Export folder <input name="export_root" required></label>
+        <fieldset id="formats"><legend>Formats</legend></fieldset>
+        <label class="check"><input type="checkbox" name="folder_hierarchy"> Nested folders (folder hierarchy)</label>
+        <label>Exclude folders (one per line) <textarea name="exclude_folders" rows="2"></textarea></label>
+        <label class="check"><input type="checkbox" name="prune_deleted"> Remove files of notes deleted in Notes</label>
+        <label class="check"><input type="checkbox" name="html_wrap"> Full HTML pages with titles</label>
+        <label class="check"><input type="checkbox" name="tags"> Read #tags from the Notes database (needs Full Disk Access)</label>
+        <label class="check"><input type="checkbox" name="tags_in_content"> Write a Tags line into notes</label>
+        <label>Convert images to <select name="image_format"><option value="">(keep)</option><option>jpeg</option><option>png</option><option>heic</option><option>tiff</option><option>webp</option></select></label>
+        <fieldset><legend>Schedule</legend>
+          <label class="check"><input type="checkbox" name="schedule_enabled"> Export automatically</label>
+          <label>Kind <select name="schedule_kind"><option value="daily">Daily at</option><option value="interval">Every N minutes</option></select></label>
+          <label>Daily at (HH:MM) <input name="daily_at" placeholder="00:13"></label>
+          <label>Every (minutes) <input name="interval_minutes" type="number" min="1"></label>
+        </fieldset>
+        <button type="submit">Save</button>
+        <p class="error" id="settings-error"></p><p class="ok" id="settings-ok"></p>
+      </form>
+    </section>
+
+    <section id="tab-users" class="panel" hidden>
+      <div class="card">
+        <table id="users"><thead><tr><th>User</th><th>Role</th><th>Created</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+      <form id="user-form" class="card">
+        <h3>Add a user</h3>
+        <label>Username <input name="username" required></label>
+        <label>Password <input name="password" type="password" autocomplete="new-password" required></label>
+        <label>Role <select name="role"><option value="reader">reader (read + run)</option><option value="admin">admin</option></select></label>
+        <button type="submit">Add</button>
+        <p class="error" id="user-error"></p>
+      </form>
+    </section>
+
+    <section id="tab-keys" class="panel" hidden>
+      <div class="card" id="new-key" hidden>
+        <h3>New key — copy it now, it is not shown again</h3>
+        <div class="row"><code id="new-key-value"></code><button id="copy-key">Copy</button></div>
+      </div>
+      <div class="card">
+        <table id="keys"><thead><tr><th>Name</th><th>Key</th><th>Scopes</th><th>Owner</th><th>Last used</th><th>Expires</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+      <form id="key-form" class="card">
+        <h3>Create an API key</h3>
+        <label>Name <input name="name" placeholder="FunHoard" required></label>
+        <fieldset><legend>Scopes</legend>
+          <label class="check"><input type="checkbox" name="scope" value="read" checked> read</label>
+          <label class="check"><input type="checkbox" name="scope" value="run"> run</label>
+          <label class="check"><input type="checkbox" name="scope" value="admin"> admin</label>
+        </fieldset>
+        <label>Expires (optional) <input name="expires_at" type="date"></label>
+        <button type="submit">Create</button>
+        <p class="error" id="key-error"></p>
+      </form>
+    </section>
+  </div>
+</main>
+</body>
+</html>

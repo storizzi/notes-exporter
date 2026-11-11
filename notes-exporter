@@ -1,0 +1,11 @@
+#!/bin/zsh
+# notes-exporter - the service command line (serve, user, apikey, service).
+# See SERVICE-API.md. Uses NOTES_SERVICE_PYTHON, else .venv/bin/python, else python3.
+SCRIPT_DIR="${0:A:h}"
+PY="${NOTES_SERVICE_PYTHON:-}"
+if [[ -z "$PY" ]]; then
+    if [[ -x "$SCRIPT_DIR/.venv/bin/python" ]]; then PY="$SCRIPT_DIR/.venv/bin/python"; else PY="$(command -v python3)"; fi
+fi
+[[ -n "$PY" ]] || { echo "python3 not found" >&2; exit 1; }
+export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}"
+exec "$PY" -m notes_service "$@"

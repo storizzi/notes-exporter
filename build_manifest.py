@@ -248,6 +248,7 @@ def build(root: Path, run_info: dict, live_path: Optional[Path] = None) -> dict:
         remaining = [rel(root, p) for p in output_paths(root, tracker, rec).values() if p.is_file()]
         remaining += [rel(root, p) for p in attachment_files(root, tracker, rec)]
         was = prev_deleted.get(full_id)
+        deleted_now = was is None or was.get("removed_outputs") != rec.get("prunedOutputs", [])
         deleted.append({
             "id": full_id,
             "short_id": note_id,
@@ -257,7 +258,9 @@ def build(root: Path, run_info: dict, live_path: Optional[Path] = None) -> dict:
             "deleted_at": rec.get("deletedAt") or legacy_date_to_iso(rec.get("deletedDate", "")),
             "removed_outputs": rec.get("prunedOutputs", []),
             "remaining_outputs": remaining,
-            "deleted_this_run": was is None or was.get("removed_outputs") != rec.get("prunedOutputs", []),
+            "deleted_this_run": deleted_now,
+            # the run.sequence that recorded the deletion (or last removed its files)
+            "deleted_in_run": sequence if deleted_now else was.get("deleted_in_run"),
         })
 
     skipped = []
