@@ -135,3 +135,18 @@ def test_save_and_load_with_nasty_title(compiled, tmp_path):
         compiled, 's\'s joinList(item 2 of (s\'s loadNotebookData(item 1 of argv, item 2 of argv, false)), "|")',
         tracker_cmd, str(json_path))
     assert loaded == "LOOK-WHAT`S-44"
+
+
+def test_renamed_note_removes_only_its_own_attachments(compiled, tmp_path):
+    """The old name is a find(1) pattern: brackets must match literally."""
+    att = tmp_path / "html" / "iCloud-Food" / "attachments"
+    att.mkdir(parents=True)
+    own = att / "Plan-[a]-attachment-001.png"
+    other = att / "Plan-a-attachment-001.png"
+    own.write_bytes(b"x")
+    other.write_bytes(b"y")
+    call_handler(compiled, "s's handleFilenameChange(item 1 of argv, item 2 of argv, "
+                 "item 3 of argv, item 4 of argv)",
+                 str(tmp_path) + "/", "iCloud-Food/", "Plan-[a]", "Plan-b")
+    assert not own.exists()
+    assert other.exists()

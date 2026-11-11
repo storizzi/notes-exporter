@@ -621,13 +621,25 @@ on deleteAttachmentsFromAllFormats(rootDir, subdirPrefix, oldFileName)
         set folderPath to rootDir & formatDir & "/" & subdirPrefix
         repeat with attachmentDir in {folderPath & "attachments", folderPath}
             try
-                do shell script "if [ -d " & quoted form of (attachmentDir as text) & " ]; then find " & quoted form of (attachmentDir as text) & " -maxdepth 1 -type f -name " & quoted form of (oldFileName & "-attachment-*") & " -delete; fi"
+                do shell script "if [ -d " & quoted form of (attachmentDir as text) & " ]; then find " & quoted form of (attachmentDir as text) & " -maxdepth 1 -type f -name " & quoted form of (my globEscape(oldFileName) & "-attachment-*") & " -delete; fi"
             on error errMsg
                 log "Error deleting attachments for " & oldFileName & ": " & errMsg
             end try
         end repeat
     end repeat
 end deleteAttachmentsFromAllFormats
+
+-- Escape find(1) -name pattern characters that file names keep ([ and ]),
+-- so "Plan-[a]" cannot match the attachments of a note called "Plan-a".
+on globEscape(theText)
+    set out to ""
+    repeat with c in characters of theText
+        set c to c as text
+        if c is "[" or c is "]" or c is "*" or c is "?" or c is "\\" then set out to out & "\\"
+        set out to out & c
+    end repeat
+    return out
+end globEscape
 
 on deleteOldFilesSafely(filePaths, oldFileName)
     repeat with filePath in filePaths
