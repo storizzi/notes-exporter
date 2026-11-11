@@ -1,7 +1,7 @@
 # Releases <!-- omit from toc -->
 
-- [Unreleased - Release 1.5.0 - Service API \& EPUB](#unreleased---release-150---service-api--epub)
-- [Unreleased - Release 1.4.0 - Nested Folders, Manifest \& Reliable Incremental Export](#unreleased---release-140---nested-folders-manifest--reliable-incremental-export)
+- [11 November 2026 - Release 1.5.0 - Service API \& EPUB](#11-november-2026---release-150---service-api--epub)
+- [11 November 2026 - Release 1.4.0 - Nested Folders, Manifest \& Reliable Incremental Export](#11-november-2026---release-140---nested-folders-manifest--reliable-incremental-export)
 - [18 March 2026 - Release 1.3.0 - Bidirectional Sync, Search \& Venv Support](#18-march-2026---release-130---bidirectional-sync-search--venv-support)
 - [17 March 2026 - Release 1.2.0 - Bug Fix, UTF-8 Support \& File Date Setting](#17-march-2026---release-120---bug-fix-utf-8-support--file-date-setting)
 - [8 January 2026 - Release 1.1.0 - Deleted Record Handling](#8-january-2026---release-110---deleted-record-handling)
@@ -10,7 +10,7 @@
 - [10 June 2024 - Release 0.2 - Filename format / other file types](#10-june-2024---release-02---filename-format--other-file-types)
 - [8 December 2023 - Release 0.1 - Initial Release](#8-december-2023---release-01---initial-release)
 
-## Unreleased - Release 1.5.0 - Service API & EPUB
+## 11 November 2026 - Release 1.5.0 - Service API & EPUB
 
 notes-exporter can now run as a long-running service that other programs (FunHoard, a backup job, a script) use over HTTP, and exports EPUB.
 
@@ -43,7 +43,7 @@ Nothing changes for the command line or the nightly job. `requirements.txt` gain
 
 * Service tests (TestClient with a fake exporter, a fake launchctl, a fake permission helper and a fake `security`), an end-to-end suite on a real server port (also driving the real `exportnotes.zsh` with the fake osascript), EPUB structure and book tests, and `ikt.project.js` so `ikt test notes-exporter` runs the tiers `unit`, `service`, `e2e` and `epubcheck` (optional), plus the opt-in `live` tier (`NOTES_EXPORTER_LIVE=1`: one real export through the running service, checked file by file against the manifest, counts only).
 
-## Unreleased - Release 1.4.0 - Nested Folders, Manifest & Reliable Incremental Export
+## 11 November 2026 - Release 1.4.0 - Nested Folders, Manifest & Reliable Incremental Export
 
 This release makes the export dependable for large libraries and for other programs: incremental runs only touch notes that changed, one bad note no longer stops a run, deletions are only recorded when they are certain, nested folders are kept, and every run leaves a machine-readable `manifest.json`.
 
