@@ -1,6 +1,6 @@
 # Apple Notes Export Tool <!-- omit from toc -->
 
-**Version 1.3.0**
+**Version 1.4.0** (unreleased)
 
 <figure style="float: right; margin-left: 10px;">
     <img src="notes-exporter.jpg" alt="Notes Exporter" width="200">
@@ -23,6 +23,7 @@ Works on macOS only (uses AppleScript). Requires the Notes app.
 | **[Basic Guide](./GUIDE-BASIC.md)** | Getting started | Export, search, scheduling, reconciliation |
 | **[Advanced Guide](./GUIDE-ADVANCED.md)** | Power users | Bidirectional sync, AI search, Qdrant, JSON output |
 | **[Technical Reference](./REFERENCE.md)** | Developers | All CLI options, env vars, JSON schemas, file structure |
+| **[Integration Guide](./INTEGRATION.md)** | Other programs | The manifest, JSON Lines events, exit codes, locking |
 
 ## Quick Start
 
@@ -31,18 +32,17 @@ Works on macOS only (uses AppleScript). Requires the Notes app.
 brew install git python
 git clone https://github.com/storizzi/notes-exporter.git
 cd notes-exporter
-pip install -r requirements.txt
 
-# Export all notes to Markdown
-chmod +x exportnotes.zsh
+# Export all notes to Markdown (the first run creates .venv and installs the dependencies)
 ./exportnotes.zsh --convert-markdown
 
 # Search your notes
-python3 query_notes.py "meeting notes"
-python3 query_notes.py --modified-within 7d -l "."
+./exportnotes.zsh --query "meeting notes"
+./exportnotes.zsh --query --modified-within 7d -l "."
 ```
 
-Output goes to `~/Downloads/AppleNotesExport/` by default.
+Output goes to `~/Downloads/AppleNotesExport/` by default. Use `python3`, not
+`python`: macOS has no `python` command.
 
 ## What It Does
 
@@ -50,6 +50,8 @@ Output goes to `~/Downloads/AppleNotesExport/` by default.
 - Raw HTML, processed HTML (with extracted images), plain text
 - Markdown (for Obsidian, etc.), PDF, Word (DOCX)
 - Incremental — only re-exports changed notes (~3x faster than full export)
+- Nested folders kept as nested directories (`--folder-hierarchy`)
+- Images optionally converted (`--image-format jpeg`), `#tags` read with `--tags`
 
 **Search** across all exported notes:
 - Text and regex search with context, date filtering, image filtering
@@ -65,39 +67,31 @@ Output goes to `~/Downloads/AppleNotesExport/` by default.
 - Qdrant vector indexing for semantic search
 - Scheduled automatic exports via launchd
 - Machine-readable JSON Lines output from all commands
+- A `manifest.json` describing every note and its files, for other programs ([INTEGRATION.md](./INTEGRATION.md))
 
-## What's New in 1.3.0
+## What's New in 1.4.0
 
-### Bidirectional Sync
-Edit exported markdown locally, then sync back to Apple Notes with `--sync` or `--sync-only`. Conflict detection creates `.conflict.md` sidecars. Create new notes with `--create-new`.
+### Nested folders
+`--folder-hierarchy` exports `Work/Projects/2026` as nested directories (or use `&folderpath` in `--subdir-format`). `--filter-folders` and the new `--exclude-folders` take folder paths. `reorganize_by_folder.py` moves an existing export into the new layout.
 
-### AI Search with Qdrant
-Semantic search using Ollama embeddings and Qdrant vector database. `--ai-search "cooking ideas"` finds recipe notes even without matching keywords. Incremental indexing with `--update-qdrant`.
+### For other programs
+Every run writes `manifest.json`: each note's id, folder path, dates, tags, flags, files with SHA-256 hashes, attachments, renames and moves, deleted and skipped notes. `--json-log` streams progress events, `--non-interactive` never waits at a permission prompt, exit codes say what happened, and a lock stops two exports sharing a folder. See [INTEGRATION.md](./INTEGRATION.md).
 
-### Search & Query Tool
-Full-text search with regex (`-E`), date filtering (`--modified-within 3d`), image filtering (`--has-images`), and folder filtering (`-F Notes`).
+### Deletions and moves
+Deleted notes are recorded only after a run that read their whole folder, so an interrupted or filtered run no longer marks notes deleted. A note moved to another folder is exported there and its old copy removed. `--prune-deleted` removes the files of deleted notes, keeping locally edited Markdown.
 
-### Reconciliation
-`reconcile.py` compares counts across Apple Notes, tracking JSON, disk files, and Qdrant. `--details` pinpoints specific exceptions.
+### More
+- `--image-format`, `--image-format-from`, `--image-quality`: convert extracted images (HEIC to JPEG, for example).
+- `--tags`: real `#tags`, pinned and checklist flags from the Notes database (needs Full Disk Access). `--tags-in-content` writes a Tags line into the note.
+- Locked notes are skipped and listed instead of stopping the export; one failing note no longer stops the rest.
+- Paths with spaces, attachment names with `)`, and notes whose title contains quotes all work.
+- Python is found or set up automatically (`.venv`), or named with `--python`.
 
-### Export Enhancements
-`--no-overwrite`, `--modified-after DATE`, `--images-beside-docs`, `--html-wrap`, `--dedup-images`.
+### Upgrading from 1.3.x
 
-### Venv Support
-`--venv-dir .venv` replaces conda. `--conda-env` still works (maps to venv with deprecation warning).
+Nothing to do: the default layout is unchanged and old tracking files are read as they are. The first 1.4 run adds folder information to each note. To switch to nested folders, run `reorganize_by_folder.py --root ~/Downloads/AppleNotesExport --dry-run`, then without `--dry-run`, then export with `--folder-hierarchy`.
 
-### JSON Lines Output
-All commands support `--json-log` for machine-readable output.
-
-### Upgrading from 1.2.x
-
-Sync requires `fullNoteId` in tracking JSON. Run a full re-export after upgrading:
-
-```bash
-./exportnotes.zsh --update-all --convert-markdown
-```
-
-See [RELEASES.md](./RELEASES.md) for full details.
+See [RELEASES.md](./RELEASES.md) for full details, and for 1.3.0 (bidirectional sync, AI search, the query tool, reconciliation).
 
 ## Setup
 
@@ -117,9 +111,19 @@ Optional (for specific features):
 ```bash
 git clone https://github.com/storizzi/notes-exporter.git
 cd notes-exporter
-pip install -r requirements.txt
-chmod +x exportnotes.zsh
 ```
+
+`exportnotes.zsh` creates a virtual environment in `.venv` and installs
+`requirements.txt` into it on first use (and again when the file changes).
+To manage it yourself:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+./exportnotes.zsh --venv-dir .venv ...      # or --python .venv/bin/python
+```
+
+Homebrew's Python refuses a plain `pip install` outside a virtual environment.
 
 ### First Export
 
@@ -127,13 +131,15 @@ chmod +x exportnotes.zsh
 ./exportnotes.zsh --convert-markdown
 ```
 
-macOS will prompt for Notes app permissions on first run.
+macOS will ask whether your terminal may control Notes on the first run; click Allow. A scheduled or scripted run should use `--non-interactive`, which exits with code 3 instead of waiting at that prompt.
 
 ## Tests
 
 ```bash
-# Run all tests (258 tests)
-pytest -v
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+
+# Run all tests
+.venv/bin/python -m pytest -v
 
 # By category
 pytest -m unit           # Fast unit tests
@@ -150,4 +156,4 @@ tests/test.zsh           # All tests
 tests/test.zsh search    # Just search tests
 ```
 
-All tests use isolated temp directories — never touches your live data.
+All tests use isolated temp directories and never touch your live data or Apple Notes: the end-to-end tests of `exportnotes.zsh` use a stand-in for `osascript` (`tests/fake_osascript.py`).

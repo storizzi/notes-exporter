@@ -6,7 +6,7 @@ Complete reference for all CLI options, environment variables, JSON schemas, fil
 
 ### exportnotes.zsh
 
-Main export script. Orchestrates AppleScript extraction, image processing, format conversion, sync, and Qdrant indexing.
+Main export script. Orchestrates AppleScript extraction, image processing, format conversion, sync, and Qdrant indexing. It writes `manifest.json`, can stream JSON Lines events (`--json-log`) and exits with a meaningful code; that contract is in [INTEGRATION.md](INTEGRATION.md).
 
 ### query_notes.py
 
@@ -46,13 +46,17 @@ Configure scheduled automatic exports via macOS launchd.
 | `--update-all` | `-U` | `false` | Force full re-export |
 | `--include-deleted` | `-I` | `false` | Include deleted records |
 | `--clean` | `-C` | `false` | Clear output dirs before export |
+| `--prune-deleted` | — | `false` | Remove the files of notes deleted in Apple Notes (locally edited Markdown is kept) |
+| `--tags` | — | `false` | Read `#tags`, pinned and checklist flags from the Notes database (needs Full Disk Access) |
+| `--version` | — | — | Print the version (as JSON with `--json-log`) |
 
 ### Filtering
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
 | `--filter-accounts LIST` | `-A` | — | Comma-separated account names |
-| `--filter-folders LIST` | `-F` | — | Comma-separated folder names |
+| `--filter-folders LIST` | `-F` | — | Comma-separated folder names or paths (`Work/Projects`) |
+| `--exclude-folders LIST` | — | — | Comma-separated folder names or paths to leave out (e.g. `Recently Deleted`) |
 | `--note-limit NUM` | `-n` | — | Max total notes |
 | `--note-limit-per-folder NUM` | `-f` | — | Max notes per folder |
 | `--note-pick-probability NUM` | `-b` | `100` | % probability per note |
@@ -63,7 +67,8 @@ Configure scheduled automatic exports via macOS launchd.
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
 | `--filename-format FORMAT` | `-t` | `&title-&id` | Filename template |
-| `--subdir-format FORMAT` | `-u` | `&account-&folder` | Subdirectory template |
+| `--subdir-format FORMAT` | `-u` | `&account-&folder` | Subdirectory template (may contain `/`) |
+| `--folder-hierarchy` | — | — | Nested folders: same as `--subdir-format '&account/&folderpath'` |
 | `--use-subdirs` | `-x` | `true` | Use subdirectories |
 | `--suppress-header-pdf` | `-s` | `true` | No headers in PDF |
 | `--set-file-dates` | `-D` | `false` | Set filesystem dates |
@@ -71,6 +76,10 @@ Configure scheduled automatic exports via macOS launchd.
 | `--images-beside-docs` | — | `false` | Images next to files |
 | `--html-wrap` | — | `false` | Proper HTML page tags |
 | `--dedup-images` | — | `false` | Deduplicate images |
+| `--image-format FMT` | — | — | Convert extracted images to `jpeg`, `png`, `heic`, `tiff` or `webp` (sips; WebP needs Pillow or cwebp) |
+| `--image-format-from LIST` | — | all | Only convert these source types, e.g. `heic,tiff` |
+| `--image-quality N` | — | — | 1–100 for `jpeg`, `heic`, `webp` |
+| `--tags-in-content` | — | `false` | Add a "Tags: #a #b" line to the HTML (and so Markdown, PDF, Word) |
 
 ### Sync
 
@@ -89,11 +98,21 @@ Configure scheduled automatic exports via macOS launchd.
 | `--update-qdrant` | — | `false` | Sync to Qdrant after export |
 | `--query PATTERN` | `-Q` | — | Search notes (passes to query_notes.py) |
 
+### Automation
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--json-log [FILE]` | — | — | JSON Lines events on stdout (human output moves to stderr), or appended to FILE |
+| `--non-interactive` | — | `false` | Exit with code 3 instead of waiting at a macOS permission prompt |
+
+Exit codes: `0` ok, `1` could not start, `2` partial, `3` Notes automation refused (or would prompt), `4` another export holds the lock, `5` export failed. See [INTEGRATION.md](INTEGRATION.md).
+
 ### Environment
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--venv-dir DIR` | `-v` | — | Python virtual environment |
+| `--python PATH` | — | — | Python interpreter to use (must have `requirements.txt` installed) |
+| `--venv-dir DIR` | `-v` | — | Python virtual environment (created, and dependencies installed, if needed) |
 | `--remove-venv` | — | `false` | Remove venv after export |
 | `--conda-env NAME` | `-c` | — | Deprecated, maps to `--venv-dir` |
 | `--remove-conda-env` | `-e` | — | Deprecated, maps to `--remove-venv` |
@@ -106,8 +125,12 @@ Configure scheduled automatic exports via macOS launchd.
 | `&id` | Apple Notes internal ID |
 | `&account` | Account name |
 | `&folder` | Folder name |
+| `&folderpath` | Folder with its parents, `/`-separated (`Work/Projects/2026`); in a subdirectory format it makes nested folders |
+| `&path` | Same as `&folderpath` |
 | `&accountid` | Account UUID |
 | `&shortaccountid` | Short account ID |
+
+Without `--python` or `--venv-dir`, the script uses a `python3` that already has the dependencies, else creates `.venv` next to the script and installs `requirements.txt` into it (again whenever that file changes).
 
 All boolean options accept: flag only (implies `true`), explicit `true`/`false`, or environment variable.
 
@@ -240,6 +263,14 @@ Fractional values supported: `1.5d`, `0.5h`.
 | `NOTES_EXPORT_IMAGES_BESIDE_DOCS` | `false` | Images next to files |
 | `NOTES_EXPORT_HTML_WRAP` | `false` | HTML page tags |
 | `NOTES_EXPORT_DEDUP_IMAGES` | `false` | Deduplicate images |
+| `NOTES_EXPORT_IMAGE_FORMAT` | — | Convert images to this format |
+| `NOTES_EXPORT_IMAGE_FORMAT_FROM` | — | Only convert these source formats |
+| `NOTES_EXPORT_IMAGE_QUALITY` | — | 1–100 for lossy targets |
+| `NOTES_EXPORT_TAGS` | `false` | Read tags / pinned / checklists from the Notes database |
+| `NOTES_EXPORT_NOTES_DB` | NoteStore.sqlite | Another Notes database for `--tags` |
+| `NOTES_EXPORT_TAGS_IN_CONTENT` | `false` | Add a Tags line to the HTML |
+| `NOTES_EXPORT_PRUNE_DELETED` | `false` | Remove deleted notes' files |
+| `NOTES_EXPORT_CHROME` | found automatically | Chrome / Chromium binary for PDF |
 
 ### Filenames & Directories
 
@@ -255,7 +286,8 @@ Fractional values supported: `1.5d`, `0.5h`.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NOTES_EXPORT_FILTER_ACCOUNTS` | — | Comma-separated account names |
-| `NOTES_EXPORT_FILTER_FOLDERS` | — | Comma-separated folder names |
+| `NOTES_EXPORT_FILTER_FOLDERS` | — | Comma-separated folder names or paths |
+| `NOTES_EXPORT_EXCLUDE_FOLDERS` | — | Folder names or paths to leave out |
 | `NOTES_EXPORT_NOTE_LIMIT` | — | Max total notes |
 | `NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER` | — | Max per folder |
 | `NOTES_EXPORT_NOTE_PICK_PROBABILITY` | `100` | % probability |
@@ -269,6 +301,15 @@ Fractional values supported: `1.5d`, `0.5h`.
 | `NOTES_EXPORT_SYNC_DRY_RUN` | `false` | Preview sync |
 | `NOTES_EXPORT_CREATE_NEW` | `false` | Create new notes |
 | `NOTES_EXPORT_CONFLICT_STRATEGY` | — | `abort`, `local`, `remote` |
+
+### Automation
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NOTES_EXPORT_JSON_LOG` | — | `-` (stdout) or a file for JSON Lines events |
+| `NOTES_EXPORT_NON_INTERACTIVE` | `false` | Never wait at a permission prompt (exit 3) |
+| `NOTES_EXPORT_SKIP_PERMISSION_CHECK` | `false` | Skip the automation pre-check |
+| `NOTES_EXPORT_PYTHON` | — | Python interpreter to use |
 
 ### Qdrant
 
@@ -353,6 +394,17 @@ Each note in `data/*.json`:
 | `lastIndexedToQdrant` | Qdrant sync | Last Qdrant index timestamp |
 | `qdrantChunkCount` | Qdrant sync | Chunks stored in Qdrant |
 | `deletedDate` | Export | When note was detected as deleted |
+| `createdAt`, `modifiedAt` | Export (1.4) | ISO 8601 dates with offset (the legacy `created` / `modified` strings stay) |
+| `title`, `account`, `accountId`, `folderId` | Export (1.4) | Note title and where it lives |
+| `folderPath`, `subdir` | Export (1.4) | Folder and parents (list); output subdirectory |
+| `locked`, `shared` | Export (1.4) | Flags from Notes |
+| `deletedAt`, `movedTo` | Export (1.4) | ISO deletion time; for a move, the tracker the note moved to |
+| `prunedDate`, `prunedOutputs` | prune (1.4) | Files removed for a deleted or moved note |
+| `markdownHash`, `modifiedAtMarkdownExport` | Markdown (1.4) | Baseline for local-edit detection before the first sync |
+| `tags`, `tagsSource`, `pinned`, `checklist` | `--tags` (1.4) | From the Notes database |
+
+Tracking files are written atomically. One that cannot be parsed is moved
+aside as `<name>.json.corrupt` and rebuilt by the next export.
 
 ---
 
@@ -596,6 +648,15 @@ notes-exporter/
   convert_to_word.py           # HTML to Word (via Pandoc)
   set_file_dates.py            # Set filesystem timestamps
   notes_export_utils.py        # Shared tracking utilities
+  tracker_io.py                # Tracking files: load/save for the AppleScript, finalize (deletes, moves)
+  build_manifest.py            # Writes manifest.json (INTEGRATION.md)
+  events.py                    # JSON Lines events for --json-log
+  export_layout.py             # Where a note's files live (shared by prune and manifest)
+  prune_deleted.py             # Removes moved notes' old copies, and deleted notes' files
+  notes_db.py                  # --tags: tags / pinned / checklists from a copy of the Notes database
+  notes_permission.py          # Automation permission check that never prompts
+  reorganize_by_folder.py      # Moves an existing flat export into nested folders
+  VERSION                      # Tool version
   query_notes.py               # Search tool
   sync_to_notes.py             # Sync engine
   sync_notes_bridge.py         # Python-AppleScript bridge
@@ -623,15 +684,32 @@ notes-exporter/
     test_notes_export_utils.py # Tracker utility tests
     test_set_file_dates.py     # File date tests
     test_tracker.py            # Tracker subdirectory tests
+    test_tracker_io.py         # Tracking file I/O, deletes and moves
+    test_nested_folders.py     # Nested folder paths in every step
+    test_exportnotes_cli.py    # exportnotes.zsh end to end (fake osascript)
+    test_pipeline_units.py     # Events, permission words, prune, manifest, image conversion
+    test_notes_db.py           # Tags from a synthetic Notes database
+    test_applescript_handlers.py # Pure AppleScript handlers (no Notes access)
+    fake_osascript.py          # Stand-in for export_notes.scpt in tests
 ```
+
+With `--folder-hierarchy` (`--subdir-format '&account/&folderpath'`) each
+format directory holds `iCloud/Work/Projects/…` instead of `iCloud-Projects/`,
+and the tracking file for that folder is `data/iCloud%2FWork%2FProjects.json`
+(`/` and `%` are percent-encoded). Move an existing flat export with
+`reorganize_by_folder.py --root DIR` (add `--dry-run` first).
 
 ### Export Output Structure
 
 ```
 AppleNotesExport/              # NOTES_EXPORT_ROOT_DIR
+  manifest.json                # Machine-readable state of the export (INTEGRATION.md)
+  .notes-exporter.lock/        # Present while an export runs
   data/                        # JSON tracking files
     iCloud-Notes.json
     iCloud-Evernote.json
+    .live_notes.tsv            # This run's view of Notes (private)
+    .manifest_cache.json       # File hashes by size and mtime (private)
   raw/                         # Raw HTML (base64 images embedded)
     iCloud-Notes/
       My-Note-1234.html

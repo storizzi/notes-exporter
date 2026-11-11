@@ -16,6 +16,7 @@ setopt pipefail
 
 SCRIPT_START_TIME=$SECONDS
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
+SCRIPT_NAME="${0:t}"
 NOTES_EXPORTER_VERSION="$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo unknown)"
 
 EXIT_OK=0; EXIT_USAGE=1; EXIT_PARTIAL=2; EXIT_PERMISSION=3; EXIT_LOCKED=4; EXIT_FAILED=5
@@ -83,7 +84,7 @@ show_help() {
     cat <<EOF
 Apple Notes Exporter ${NOTES_EXPORTER_VERSION}
 
-Usage: $0 [OPTIONS]
+Usage: ${SCRIPT_NAME} [OPTIONS]
 
 Output
   -r, --root-dir DIR             Root directory for exports (default: ~/Downloads/AppleNotesExport)

@@ -1,5 +1,6 @@
 # Releases <!-- omit from toc -->
 
+- [Unreleased - Release 1.4.0 - Nested Folders, Manifest \& Reliable Incremental Export](#unreleased---release-140---nested-folders-manifest--reliable-incremental-export)
 - [18 March 2026 - Release 1.3.0 - Bidirectional Sync, Search \& Venv Support](#18-march-2026---release-130---bidirectional-sync-search--venv-support)
 - [17 March 2026 - Release 1.2.0 - Bug Fix, UTF-8 Support \& File Date Setting](#17-march-2026---release-120---bug-fix-utf-8-support--file-date-setting)
 - [8 January 2026 - Release 1.1.0 - Deleted Record Handling](#8-january-2026---release-110---deleted-record-handling)
@@ -7,6 +8,59 @@
 - [6 June 2025 - Release 0.3 - Automated Scheduling \& Output Improvements](#6-june-2025---release-03---automated-scheduling--output-improvements)
 - [10 June 2024 - Release 0.2 - Filename format / other file types](#10-june-2024---release-02---filename-format--other-file-types)
 - [8 December 2023 - Release 0.1 - Initial Release](#8-december-2023---release-01---initial-release)
+
+## Unreleased - Release 1.4.0 - Nested Folders, Manifest & Reliable Incremental Export
+
+This release makes the export dependable for large libraries and for other programs: incremental runs only touch notes that changed, one bad note no longer stops a run, deletions are only recorded when they are certain, nested folders are kept, and every run leaves a machine-readable `manifest.json`.
+
+### Upgrading from 1.3.x <!-- omit from toc -->
+
+Nothing is required. The default layout (`&account-&folder`, `&title-&id`) is unchanged, and 1.3 tracking files are read as they are; the first 1.4 run adds ISO dates and folder information to each record. Use `python3` (macOS has no `python`); `exportnotes.zsh` now creates `.venv` and installs the dependencies itself when no suitable Python is found. To move to nested folders, run `reorganize_by_folder.py --dry-run`, then without it, and export with `--folder-hierarchy`.
+
+### Export reliability <!-- omit from toc -->
+
+* **Incremental runs re-exported unchanged notes** (#30): modification dates are compared as ISO timestamps instead of localised strings, and recorded with a time zone.
+* **Note titles with a back-tick, quote or `$` were silently dropped** (#33): tracking data is no longer passed through a shell; the AppleScript writes it to a file that `tracker_io.py` merges.
+* **Same-named folders under different parents dropped each other's notes** (#37): a note is recorded as deleted only after a run that listed its own folder to the end. Interrupted, failed and filtered runs never record deletions.
+* **Locked notes and failing notes** are skipped and reported; the export carries on. Only a refused permission or Notes quitting stops it.
+* **Notes changing during an export**: folders are checked by id and each folder's notes are read consistently, so another note's title or flags can't end up on a file.
+* **writeToFile appended instead of replacing** shorter content, and closed the wrong file (#24, #25).
+* **Paths with spaces** in the tool's own folder broke the script (#38).
+* **`python` not found** on current macOS (#15, #17, #32).
+* **`--venv-dir` didn't install dependencies** (#29).
+* Dates from `set_file_dates.py` work with more locale formats (#24).
+
+### Nested folders <!-- omit from toc -->
+
+* `&folderpath` (alias `&path`) in `--subdir-format`, and `--folder-hierarchy` for `&account/&folderpath` (#36).
+* `--filter-folders` and the new `--exclude-folders` accept folder paths (`Work/Projects`).
+* `reorganize_by_folder.py` moves an existing flat export into the nested layout, offline from the tracking data.
+* Every later step (images, conversions, dates, sync, query, reconcile, Qdrant) follows the nested paths.
+
+### For other programs <!-- omit from toc -->
+
+* **`manifest.json`** (format `notes-exporter.manifest`, version 1), written atomically after every run, failed ones included: notes with stable ids, nested folder paths, ISO dates, tags, locked / shared / pinned / checklist, every output file with SHA-256 and size, attachments, `previous_outputs` after renames and moves, `changed_this_run`; deleted notes as tombstones; skipped notes with the reason. See [INTEGRATION.md](./INTEGRATION.md).
+* **`--json-log [FILE]`** on `exportnotes.zsh`: JSON Lines events (`start`, `plan`, `progress`, `stage`, `note_error`, `manifest`, `result`).
+* **Exit codes**: 0 ok, 1 could not start, 2 partial, 3 Notes automation refused, 4 another export running, 5 failed.
+* **`--non-interactive`** checks the automation permission without asking and exits with 3 rather than wait at a prompt.
+* A lock in the export root stops two exports sharing it.
+* `--version`, `--python PATH`.
+
+### Files and formats <!-- omit from toc -->
+
+* **`--prune-deleted`** removes the files of notes deleted in Apple Notes, keeping locally edited Markdown (#26). A moved note's old copy is always removed.
+* **`--image-format`**, `--image-format-from`, `--image-quality` convert extracted images (sips; WebP through Pillow or cwebp) (#28).
+* **`--tags`** reads `#tags`, pinned and checklist flags from a copy of the Notes database (needs Full Disk Access) (#16); `--tags-in-content` writes a Tags line into each note. Without `--tags` the manifest lists hashtags found in the text.
+* Markdown image links work for attachment names with spaces or parentheses (#34, #35).
+* `--html-wrap` escapes the title and adds the tags as keywords.
+* A rename removes only that note's attachments (names with `[` `]` matched others').
+* `sync_to_notes.py`: options with spaces are passed whole (#31), and Markdown edited before its first sync is detected as changed (#31).
+
+### Dependencies <!-- omit from toc -->
+
+beautifulsoup4 4.15.0, markdownify 1.2.3, pypandoc 1.17, pytest 9.2.0; tested on Python 3.15. Pillow is optional, for WebP.
+
+*Thanks to [@rnoblecodes](https://github.com/rnoblecodes) for the detailed reports and fixes behind #33, #34–#37 (PR #35 and the folder post-processor), [@sai3563](https://github.com/sai3563) (PR #24), [@weijianfan](https://github.com/weijianfan) (PR #25), [@laurachencn](https://github.com/laurachencn) (PR #32), [@gdecugis](https://github.com/gdecugis) (PR #38), [@jtenniswood](https://github.com/jtenniswood) for the ideas in PR #27, and [@chrisvanpatten](https://github.com/chrisvanpatten), [@dotherightthing](https://github.com/dotherightthing), [@tcrgit](https://github.com/tcrgit), [@pppaapp](https://github.com/pppaapp) and [@MrSimmo](https://github.com/MrSimmo) for their reports.*
 
 ## 18 March 2026 - Release 1.3.0 - Bidirectional Sync, Search & Venv Support
 

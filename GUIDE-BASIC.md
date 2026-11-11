@@ -14,9 +14,13 @@ brew install git python
 mkdir -p ~/bin/notes-exporter && cd ~/bin/notes-exporter
 git clone https://github.com/storizzi/notes-exporter.git .
 
-# Install Python dependencies
-pip install -r requirements.txt
 ```
+
+There is nothing else to install: the first run of `exportnotes.zsh` creates a
+Python virtual environment in `.venv` and installs the dependencies into it.
+The `python3 …` commands below need those dependencies too; run
+`source .venv/bin/activate` first (or use `.venv/bin/python` instead of
+`python3`).
 
 ### 2. Export Your Notes
 
@@ -37,6 +41,11 @@ AppleNotesExport/
 ```
 
 The first time you run the script, macOS will ask for permission to access Apple Notes. Grant it.
+
+Each run also writes `manifest.json`, a list of every exported note and its
+files that other programs can read ([INTEGRATION.md](./INTEGRATION.md)).
+Notes you have locked with a password can't be read by the exporter; they are
+skipped and counted in the summary.
 
 ### 3. Export to More Formats
 
@@ -156,7 +165,68 @@ You can also search through the main script:
 
 # Only export from a specific account
 ./exportnotes.zsh --filter-accounts iCloud
+
+# A folder inside another folder: give its path
+./exportnotes.zsh --filter-folders "Work/Projects"
+
+# Everything except some folders
+./exportnotes.zsh --exclude-folders "Recently Deleted,Archive"
 ```
+
+### Keep Nested Folders
+
+By default a folder inside another is exported as `iCloud-Projects/`. To keep
+the hierarchy (`iCloud/Work/Projects/`):
+
+```bash
+./exportnotes.zsh --folder-hierarchy --convert-markdown
+```
+
+To move an existing export into that layout first (nothing in Apple Notes changes):
+
+```bash
+python3 reorganize_by_folder.py --root ~/Downloads/AppleNotesExport --dry-run
+python3 reorganize_by_folder.py --root ~/Downloads/AppleNotesExport
+```
+
+### Deleted Notes
+
+When you delete a note in Apple Notes, the next export records it as deleted
+but keeps its files. To remove them as well:
+
+```bash
+./exportnotes.zsh --prune-deleted --convert-markdown
+```
+
+A Markdown file you have edited since it was exported is kept. Apple Notes'
+own *Recently Deleted* folder is exported like any other folder unless you
+exclude it (`--exclude-folders "Recently Deleted"`).
+
+### Convert Images
+
+Pictures from an iPhone are often HEIC, which many apps can't show. Convert
+the extracted images:
+
+```bash
+./exportnotes.zsh --image-format jpeg --image-format-from heic,tiff --image-quality 85
+```
+
+`jpeg`, `png`, `heic` and `tiff` use macOS's own `sips`. `webp` needs Pillow
+(`.venv/bin/pip install pillow`) or `brew install webp`.
+
+### Tags
+
+Apple Notes keeps `#tags` outside the note text, so they don't appear in the
+export. `--tags` reads them (and whether a note is pinned or has a checklist)
+from a copy of the Notes database and puts them in `manifest.json`;
+`--tags-in-content` also writes a "Tags:" line into each note:
+
+```bash
+./exportnotes.zsh --tags --tags-in-content --convert-markdown
+```
+
+This needs **Full Disk Access** for your terminal (System Settings > Privacy &
+Security > Full Disk Access).
 
 ### Export to a Different Location
 
@@ -188,7 +258,7 @@ Keep dependencies isolated:
 ./exportnotes.zsh --venv-dir .venv --convert-markdown
 ```
 
-First run creates the venv and installs dependencies. Subsequent runs just activate it.
+First run creates the venv and installs dependencies. Subsequent runs just activate it (and reinstall when `requirements.txt` changes). Without `--venv-dir` the script uses `.venv` next to itself in the same way, or `--python /path/to/python` names an interpreter that already has the dependencies.
 
 ### Set Filesystem Dates
 

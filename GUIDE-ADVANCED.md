@@ -331,6 +331,36 @@ Identical images saved once and referenced from multiple notes:
 ./exportnotes.zsh --dedup-images
 ```
 
+### Image Conversion
+
+```bash
+# HEIC and TIFF to JPEG at quality 85
+./exportnotes.zsh --image-format jpeg --image-format-from heic,tiff --image-quality 85
+```
+
+GIFs (animation) and SVGs are never converted. An image that can't be
+converted is kept as it was, with a warning.
+
+## Running From Other Programs
+
+Every run writes `manifest.json` into the export root, and with `--json-log`
+streams progress as JSON Lines. A scheduler or another app should run:
+
+```bash
+./exportnotes.zsh --root-dir ~/NotesForMyApp --folder-hierarchy --convert-markdown \
+    --exclude-folders "Recently Deleted" --json-log --non-interactive
+echo "exit code $?"   # 0 ok, 2 partial, 3 no permission, 4 already running, 5 failed
+```
+
+The manifest gives each note's stable id, folder path, dates, tags, files with
+SHA-256 hashes, and what changed, moved or was deleted in this run.
+[INTEGRATION.md](./INTEGRATION.md) is the full, versioned description.
+
+`--non-interactive` matters for anything started without a person at the Mac
+(launchd, a server): instead of waiting forever at macOS's "wants to control
+Notes" prompt, the run exits with code 3. Run one export by hand first and
+click Allow.
+
 ## Virtual Environment
 
 Use a Python venv instead of system Python:
