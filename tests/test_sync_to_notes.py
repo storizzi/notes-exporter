@@ -104,6 +104,38 @@ class TestGetSyncStatus:
         assert not remote_changed
 
 
+    def test_edited_before_first_sync_uses_export_baseline(self, tmp_path):
+        """#31: Markdown edited after export but never synced is a local change."""
+        f = tmp_path / "test.md"
+        f.write_text("as exported", encoding="utf-8")
+        note_info = {"markdownHash": compute_file_hash(f),
+                     "modifiedAtMarkdownExport": "Monday, 17 March 2026",
+                     "modified": "Monday, 17 March 2026"}
+        assert get_sync_status(note_info, f) == (False, False)
+        f.write_text("edited locally", encoding="utf-8")
+        assert get_sync_status(note_info, f) == (True, False)
+        note_info["modified"] = "Tuesday, 18 March 2026"
+        assert get_sync_status(note_info, f) == (True, True)
+
+    def test_last_sync_baseline_wins_over_export_baseline(self, tmp_path):
+        f = tmp_path / "test.md"
+        f.write_text("synced", encoding="utf-8")
+        note_info = {"markdownHash": "0" * 64, "localFileHashAtLastSync": compute_file_hash(f),
+                     "modifiedAtMarkdownExport": "old",
+                     "appleNotesModifiedAtLastSync": "Monday, 17 March 2026",
+                     "modified": "Monday, 17 March 2026"}
+        assert get_sync_status(note_info, f) == (False, False)
+
+    def test_tracker_method_uses_export_baseline(self, tmp_path):
+        from notes_export_utils import NotesExportTracker
+        f = tmp_path / "test.md"
+        f.write_text("as exported", encoding="utf-8")
+        note_info = {"markdownHash": compute_file_hash(f),
+                     "modifiedAtMarkdownExport": "a", "modified": "b"}
+        f.write_text("edited", encoding="utf-8")
+        status = NotesExportTracker(str(tmp_path)).get_sync_status(note_info, f)
+        assert status == {"local_changed": True, "remote_changed": True}
+
 @pytest.mark.unit
 @pytest.mark.sync
 class TestCreateConflictFile:

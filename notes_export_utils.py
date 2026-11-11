@@ -213,7 +213,9 @@ class NotesExportTracker:
 
         # Local change detection
         local_changed = False
-        last_hash = note_info.get("localFileHashAtLastSync", "")
+        # Baselines: the last sync, else the Markdown export (#31)
+        last_hash = (note_info.get("localFileHashAtLastSync")
+                     or note_info.get("markdownHash", ""))
         if md_path.exists() and last_hash:
             h = hashlib.sha256()
             with open(md_path, "rb") as f:
@@ -223,7 +225,8 @@ class NotesExportTracker:
             local_changed = current_hash != last_hash
 
         # Remote change detection
-        last_remote_mod = note_info.get("appleNotesModifiedAtLastSync", "")
+        last_remote_mod = (note_info.get("appleNotesModifiedAtLastSync")
+                           or note_info.get("modifiedAtMarkdownExport", ""))
         current_remote_mod = note_info.get("modified", "")
         remote_changed = bool(last_remote_mod and current_remote_mod
                               and current_remote_mod != last_remote_mod)
