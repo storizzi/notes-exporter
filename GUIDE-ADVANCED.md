@@ -100,7 +100,7 @@ You need:
 
 ```bash
 # Check if everything is set up
-python qdrant_integration.py check
+python3 qdrant_integration.py check
 ```
 
 ### Setup: Local with Docker + Ollama (Recommended)
@@ -119,7 +119,7 @@ ollama serve
 ollama pull mxbai-embed-large
 
 # Verify
-python qdrant_integration.py check
+python3 qdrant_integration.py check
 ```
 
 ### Setup: Qdrant Cloud
@@ -167,27 +167,27 @@ Higher dimensions = better search. `mxbai-embed-large` captures more semantic nu
 
 If you change models after indexing, reset and re-index:
 ```bash
-python qdrant_integration.py reset
-python qdrant_integration.py sync --force
+python3 qdrant_integration.py reset
+python3 qdrant_integration.py sync --force
 ```
 
 ### Indexing Notes
 
 ```bash
 # Index all exported notes (incremental — only changed notes)
-python qdrant_integration.py sync
+python3 qdrant_integration.py sync
 
 # Or as part of the export pipeline
 ./exportnotes.zsh --convert-markdown --update-qdrant
 
 # Preview what would be indexed
-python qdrant_integration.py dry-run
+python3 qdrant_integration.py dry-run
 
 # Force re-embed everything
-python qdrant_integration.py sync --force
+python3 qdrant_integration.py sync --force
 
 # Custom chunk size (default: 800 chars, 200 overlap)
-python qdrant_integration.py sync --chunk-size 600 --chunk-overlap 150
+python3 qdrant_integration.py sync --chunk-size 600 --chunk-overlap 150
 ```
 
 ### How Indexing Works
@@ -202,29 +202,29 @@ Long notes are split into overlapping chunks (default: 800 chars, 200 overlap) s
 
 ```bash
 # Semantic search
-python query_notes.py --ai-search "ideas about cooking"
+python3 query_notes.py --ai-search "ideas about cooking"
 
 # Top 5 results
-python query_notes.py --ai-search -n 5 "project deadlines"
+python3 query_notes.py --ai-search -n 5 "project deadlines"
 
 # Only results above 70% similarity
-python query_notes.py --ai-search --threshold 0.7 "travel plans"
+python3 query_notes.py --ai-search --threshold 0.7 "travel plans"
 
 # List file paths only
-python query_notes.py --ai-search -l "meeting notes"
+python3 query_notes.py --ai-search -l "meeting notes"
 
 # Direct search via qdrant_integration
-python qdrant_integration.py search "your query"
+python3 qdrant_integration.py search "your query"
 ```
 
 ### Managing the Index
 
 ```bash
-python qdrant_integration.py check      # Verify prerequisites
-python qdrant_integration.py status     # Collection info and point count
-python qdrant_integration.py sync       # Sync changes
-python qdrant_integration.py dry-run    # Preview sync
-python qdrant_integration.py reset      # Delete and start fresh
+python3 qdrant_integration.py check      # Verify prerequisites
+python3 qdrant_integration.py status     # Collection info and point count
+python3 qdrant_integration.py sync       # Sync changes
+python3 qdrant_integration.py dry-run    # Preview sync
+python3 qdrant_integration.py reset      # Delete and start fresh
 ```
 
 ## Reconciliation
@@ -233,25 +233,25 @@ Compare note counts across Apple Notes, tracking JSON, disk files, and Qdrant.
 
 ```bash
 # Quick check (instant — JSON + disk only)
-python reconcile.py --skip-apple --skip-qdrant
+python3 reconcile.py --skip-apple --skip-qdrant
 
 # Include Apple Notes count
-python reconcile.py --skip-qdrant
+python3 reconcile.py --skip-qdrant
 
 # Full check including Qdrant
-python reconcile.py
+python3 reconcile.py
 
 # Per-notebook breakdown
-python reconcile.py --notebooks
+python3 reconcile.py --notebooks
 
 # List specific exceptions (orphans, missing files, etc.)
-python reconcile.py --details
+python3 reconcile.py --details
 
 # Fast details without live queries
-python reconcile.py --skip-apple --skip-qdrant --details
+python3 reconcile.py --skip-apple --skip-qdrant --details
 
 # Show fix suggestions
-python reconcile.py --details --fix
+python3 reconcile.py --details --fix
 ```
 
 What it checks:
@@ -268,25 +268,25 @@ All commands support `--json-log` for machine-readable output.
 
 ```bash
 # JSON to stdout (human output goes to stderr)
-python query_notes.py --json-log - "search term"
+python3 query_notes.py --json-log - "search term"
 
 # JSON to file (human output still prints normally)
-python query_notes.py --json-log results.jsonl "search term"
-python reconcile.py --json-log reconcile.jsonl --skip-apple
-python qdrant_integration.py --json-log status.jsonl status
+python3 query_notes.py --json-log results.jsonl "search term"
+python3 reconcile.py --json-log reconcile.jsonl --skip-apple
+python3 qdrant_integration.py --json-log status.jsonl status
 ```
 
 Each JSON line has a `type` field. Use `jq` to process:
 
 ```bash
 # Count matches
-python query_notes.py --json-log - "term" | jq 'select(.type=="summary") | .total_matches'
+python3 query_notes.py --json-log - "term" | jq 'select(.type=="summary") | .total_matches'
 
 # Get filenames from AI search
-python query_notes.py --json-log - --ai-search "cooking" | jq -r 'select(.type=="result") | .filename'
+python3 query_notes.py --json-log - --ai-search "cooking" | jq -r 'select(.type=="result") | .filename'
 
 # Check Qdrant point count
-python qdrant_integration.py --json-log - status | jq '.count'
+python3 qdrant_integration.py --json-log - status | jq '.count'
 ```
 
 ## Export Enhancements

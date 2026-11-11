@@ -2,12 +2,12 @@
 """Search exported Apple Notes for text or regex patterns.
 
 Usage:
-    python query_notes.py "search term"
-    python query_notes.py -E "regex pattern"
-    python query_notes.py --format md "search term"
-    python query_notes.py -i "case insensitive"
-    python query_notes.py -c 2 "term"          # show 2 lines of context
-    python query_notes.py -l "term"             # list matching files only
+    python3 query_notes.py "search term"
+    python3 query_notes.py -E "regex pattern"
+    python3 query_notes.py --format md "search term"
+    python3 query_notes.py -i "case insensitive"
+    python3 query_notes.py -c 2 "term"          # show 2 lines of context
+    python3 query_notes.py -l "term"             # list matching files only
 """
 
 import argparse
@@ -438,7 +438,7 @@ def main():
 
     ai_group = parser.add_argument_group("AI search",
         "Semantic search using Qdrant vector database. Requires Qdrant running "
-        "and notes indexed (run: python qdrant_integration.py sync).")
+        "and notes indexed (run: python3 qdrant_integration.py sync).")
     ai_group.add_argument("--ai-search", action="store_true",
                         help="Use semantic/AI search via Qdrant instead of text matching")
     ai_group.add_argument("-n", "--num-results", type=int, default=10,

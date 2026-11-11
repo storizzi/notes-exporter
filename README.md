@@ -38,8 +38,8 @@ chmod +x exportnotes.zsh
 ./exportnotes.zsh --convert-markdown
 
 # Search your notes
-python query_notes.py "meeting notes"
-python query_notes.py --modified-within 7d -l "."
+python3 query_notes.py "meeting notes"
+python3 query_notes.py --modified-within 7d -l "."
 ```
 
 Output goes to `~/Downloads/AppleNotesExport/` by default.

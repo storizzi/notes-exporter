@@ -8,9 +8,9 @@ Compares:
 - Qdrant vector database (if available)
 
 Usage:
-    python reconcile.py              # Full reconciliation report
-    python reconcile.py --notebooks  # Break down by notebook
-    python reconcile.py --fix        # Show suggestions for fixing mismatches
+    python3 reconcile.py              # Full reconciliation report
+    python3 reconcile.py --notebooks  # Break down by notebook
+    python3 reconcile.py --fix        # Show suggestions for fixing mismatches
 """
 
 import argparse
@@ -454,10 +454,10 @@ def run_reconciliation(show_notebooks: bool = False, show_fix: bool = False,
             diff = json_active_total - qdrant["unique_notes"]
             if diff > 0:
                 issues.append(f"Qdrant is missing {diff} notes. "
-                              "Run: python qdrant_integration.py sync")
+                              "Run: python3 qdrant_integration.py sync")
             else:
                 issues.append(f"Qdrant has {-diff} more notes than tracking JSON. "
-                              "Run: python qdrant_integration.py sync (will clean up)")
+                              "Run: python3 qdrant_integration.py sync (will clean up)")
 
     if not issues:
         fmt.emit("summary", command="reconcile", discrepancies=0)
@@ -485,7 +485,7 @@ def run_reconciliation(show_notebooks: bool = False, show_fix: bool = False,
     if show_fix and issues:
         print("\n--- Suggested Fix ---")
         print("  1. exportnotes.zsh --update-all --convert-markdown")
-        print("  2. python qdrant_integration.py sync --force")
+        print("  2. python3 qdrant_integration.py sync --force")
 
     print("\n" + "=" * 60)
     fmt.close()

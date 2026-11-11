@@ -76,42 +76,42 @@ Once exported, you can search across all your notes:
 
 ```bash
 # Find notes containing a word
-python query_notes.py "meeting"
+python3 query_notes.py "meeting"
 
 # Case-insensitive search
-python query_notes.py -i "project"
+python3 query_notes.py -i "project"
 
 # List just the matching filenames
-python query_notes.py -l "budget"
+python3 query_notes.py -l "budget"
 
 # Show context around matches
-python query_notes.py -c 3 "deadline"
+python3 query_notes.py -c 3 "deadline"
 ```
 
 ### Regex Search
 
 ```bash
 # Find patterns
-python query_notes.py -E "TODO|FIXME"
+python3 query_notes.py -E "TODO|FIXME"
 
 # Find dates
-python query_notes.py -E "[0-9]{4}-[0-9]{2}-[0-9]{2}"
+python3 query_notes.py -E "[0-9]{4}-[0-9]{2}-[0-9]{2}"
 ```
 
 ### Filter by Date
 
 ```bash
 # Notes modified in the last 3 days
-python query_notes.py --modified-within 3d "."
+python3 query_notes.py --modified-within 3d "."
 
 # Notes modified in the last week
-python query_notes.py --modified-within 1w -l "."
+python3 query_notes.py --modified-within 1w -l "."
 
 # Notes created in the last 2 months
-python query_notes.py --created-within 2m "."
+python3 query_notes.py --created-within 2m "."
 
 # Notes modified after a specific date
-python query_notes.py --modified-after 2026-01-15 "."
+python3 query_notes.py --modified-after 2026-01-15 "."
 ```
 
 Timespan units: `h` (hours), `d` (days), `w` (weeks), `m` (months), `y` (years).
@@ -120,20 +120,20 @@ Timespan units: `h` (hours), `d` (days), `w` (weeks), `m` (months), `y` (years).
 
 ```bash
 # Only notes that contain images
-python query_notes.py --has-images "photo"
+python3 query_notes.py --has-images "photo"
 
 # Only notes without images
-python query_notes.py --no-images "text"
+python3 query_notes.py --no-images "text"
 ```
 
 ### Filter by Folder
 
 ```bash
 # Search only in the Notes folder
-python query_notes.py -F Notes "important"
+python3 query_notes.py -F Notes "important"
 
 # Search only markdown files
-python query_notes.py --format md "recipe"
+python3 query_notes.py --format md "recipe"
 ```
 
 ### Search via the Main Script
@@ -204,16 +204,16 @@ Run exports automatically on a schedule:
 
 ```bash
 # Set up daily export at 9 AM
-python setup_launchd.py --hour 9 --load
+python3 setup_launchd.py --hour 9 --load
 
 # Or every 60 minutes
-python setup_launchd.py --interval 60 --load
+python3 setup_launchd.py --interval 60 --load
 
 # Check status
-python setup_launchd.py --status
+python3 setup_launchd.py --status
 
 # Stop scheduling
-python setup_launchd.py --unload
+python3 setup_launchd.py --unload
 ```
 
 Configure what gets exported by editing `.env`:
@@ -229,13 +229,13 @@ Run reconciliation to see if anything is missing:
 
 ```bash
 # Quick check (instant, no Apple Notes query)
-python reconcile.py --skip-apple --skip-qdrant
+python3 reconcile.py --skip-apple --skip-qdrant
 
 # Full check including Apple Notes count
-python reconcile.py --skip-qdrant
+python3 reconcile.py --skip-qdrant
 
 # See per-notebook breakdown
-python reconcile.py --skip-qdrant --notebooks
+python3 reconcile.py --skip-qdrant --notebooks
 ```
 
 ## Next Steps
