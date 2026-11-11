@@ -459,25 +459,26 @@ on createDirectory(directoryPath)
     do shell script "mkdir -p " & quoted form of directoryPath
 end createDirectory
 
--- Subroutine to write content to a file (with UTF-8 encoding support)
+-- Subroutine to write content to a file (with UTF-8 encoding support).
+-- Replaces the file's contents (it used to append at eof, so every re-export
+-- doubled the file) and always closes the descriptor it opened.
+-- Returns true on success, false on failure.
 on writeToFile(filePath, content)
+    set fileDescriptor to missing value
     try
-        -- Convert the file path to a file object
-        set fileObject to POSIX file filePath
-        -- Try to open the file for access
-        set fileDescriptor to open for access fileObject with write permission
-        write content to fileDescriptor starting at eof as «class utf8»
+        set fileDescriptor to open for access (POSIX file filePath) with write permission
+        set eof of fileDescriptor to 0
+        write content to fileDescriptor starting at 0 as «class utf8»
         close access fileDescriptor
-    on error errMsg
-        -- Log the error message
-        log "Error writing to file: " & errMsg
-
-        -- If the file does not exist, create it and then open for access
-        close access
-        do shell script "touch " & quoted form of filePath
-        set fileDescriptor to open for access fileObject with write permission
-        write content to fileDescriptor starting at eof as «class utf8»
-        close access fileDescriptor
+        return true
+    on error errMsg number errNum
+        log "Error writing to file " & filePath & ": " & errMsg & " (" & errNum & ")"
+        if fileDescriptor is not missing value then
+            try
+                close access fileDescriptor
+            end try
+        end if
+        return false
     end try
 end writeToFile
 

@@ -27,8 +27,10 @@ def parse_apple_date(date_string):
     date_string = date_string.replace('\u202f', ' ')
 
     formats = [
-        "%A, %B %d, %Y at %I:%M:%S %p",   # 12-hour format with AM/PM
-        "%A, %d %B %Y at %H:%M:%S",        # 24-hour format (some locales)
+        "%A, %B %d, %Y at %I:%M:%S %p",    # 12-hour format, month before day
+        "%A, %d %B %Y at %I:%M:%S %p",     # 12-hour format, day before month
+        "%A, %d %B %Y at %H:%M:%S",        # 24-hour format, day before month
+        "%A, %B %d, %Y at %H:%M:%S",       # 24-hour format, month before day
     ]
 
     for fmt in formats:

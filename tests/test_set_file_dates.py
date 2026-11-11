@@ -28,6 +28,15 @@ class TestParseAppleDate:
         result = set_file_dates.parse_apple_date("Thursday, August 26, 2021 at 7:38:15\u202fPM")
         assert result == datetime(2021, 8, 26, 19, 38, 15)
 
+    def test_12_hour_day_before_month(self):
+        # Indian / UK-style locale with a 12-hour clock (PR #24)
+        result = set_file_dates.parse_apple_date("Saturday, 21 March 2026 at 7:45:55\u202fPM")
+        assert result == datetime(2026, 3, 21, 19, 45, 55)
+
+    def test_24_hour_month_before_day(self):
+        result = set_file_dates.parse_apple_date("Saturday, March 21, 2026 at 19:45:55")
+        assert result == datetime(2026, 3, 21, 19, 45, 55)
+
     def test_invalid_date_returns_none(self):
         result = set_file_dates.parse_apple_date("not a date")
         assert result is None
