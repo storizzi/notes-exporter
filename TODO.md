@@ -23,4 +23,9 @@ Some features that might be useful to include in the future in no particular ord
 * ~~Convert images to another format~~ ✅ Done in v1.4.0 (`--image-format`)
 * ~~Tags~~ ✅ Done in v1.4.0 (`--tags`, from the Notes database; needs Full Disk Access)
 * Read tags without Full Disk Access (AppleScript does not expose them today)
+* ~~Run as a service other programs can use~~ ✅ Done in v1.5.0 (`notes-exporter serve`, SERVICE-API.md)
+* ~~EPUB output~~ ✅ Done in v1.5.0 (`--convert-epub`, `--epub-books folder`)
+* Service: HTTPS of its own (today: a reverse proxy), and push notifications of finished runs (webhooks) instead of polling
+* Service: let a run's progress events stream (server-sent events) rather than be polled
+* EPUB: non-image attachments (once they are exported at all), and a cover image per book
 * A rename that only changes letter case is not treated as a rename (AppleScript compares names ignoring case), so on a case-sensitive volume the old file stays

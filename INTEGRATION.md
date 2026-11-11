@@ -10,6 +10,10 @@ on this page is a **stable contract**, versioned separately from the tool:
 | Event stream | `--json-log`, `manifest_version: 1` in the `start` event | stdout or a file |
 | Exit codes | 0–5, below | process exit status |
 
+To use an export over HTTP instead of running the exporter yourself, see
+[SERVICE-API.md](SERVICE-API.md): `notes-exporter serve` runs and schedules
+exports and serves this manifest and the files.
+
 Within version 1, fields are only ever **added**. A reader must ignore fields
 it does not know. A change that removes or changes the meaning of a field
 bumps `version`. `exportnotes.zsh --json-log --version` prints the tool
@@ -24,6 +28,7 @@ version and the manifest version it writes.
   - [`notes`](#notes)
   - [`deleted`](#deleted)
   - [`skipped`](#skipped)
+  - [`books`](#books)
 - [Renames, moves and deletes](#renames-moves-and-deletes)
 - [Locking](#locking)
 - [macOS permissions](#macos-permissions)
@@ -60,6 +65,8 @@ version and the manifest version it writes.
   permission prompt nobody will answer.
 - Add `--prune-deleted true` to have the exporter remove files of notes
   deleted in Notes (their record stays, with `removed_outputs`).
+- Add `--convert-epub true` for one EPUB 3 per note, and `--epub-books folder`
+  for one EPUB per Notes folder (see [`books`](#books)).
 - Add `--tags true` for real Notes `#tags`, pinned and checklist flags (needs
   Full Disk Access, see [below](#what-the-exporter-cannot-see)).
 - Never pass `--sync` / `--sync-only` unless you mean to write into Apple
@@ -104,8 +111,8 @@ Each line is one object with `type` and `time` (ISO 8601 with offset):
 | `version` | `version`, `manifest_version` | only for `--json-log --version` |
 
 Stages, in order: `export`, `tracking`, `tidy`, `tags`, `images`, `markdown`,
-`pdf`, `word`, `dates`, `prune`, `sync`, `qdrant` (only the ones the options
-turn on). New event types and fields may appear; ignore what you don't know.
+`pdf`, `word`, `epub`, `books`, `dates`, `prune`, `sync`, `qdrant` (only the
+ones the options turn on). `books` progress counts `books`, not notes. New event types and fields may appear; ignore what you don't know.
 
 ## The manifest (`manifest.json`)
 
@@ -123,7 +130,9 @@ describes the whole export, not just this run: use `changed_this_run` and
   "accounts": [{"id": "x-coredata://4D3C…/ICAccount/p1", "name": "iCloud"}],
   "notes": [ ... ],
   "deleted": [ ... ],
-  "skipped": [ ... ]
+  "skipped": [ ... ],
+  "books": [ ... ],
+  "deleted_books": [ ... ]
 }
 ```
 
@@ -142,11 +151,11 @@ All dates are ISO 8601 with a UTC offset, or `null` when unknown.
 | `exit_code` | int | |
 | `tool_version` | string | e.g. `1.4.0` |
 | `root_dir` | string | absolute |
-| `formats` | list | of `raw`, `text`, `html`, `md`, `pdf`, `docx` |
+| `formats` | list | of `raw`, `text`, `html`, `md`, `pdf`, `docx`, `epub` |
 | `filename_format`, `subdir_format`, `use_subdirs` | | the layout used |
 | `filters` | object | `accounts`, `folders`, `exclude_folders`, `modified_after` (strings, empty when unused) |
 | `notes_examined`, `notes_exported`, `notes_unchanged`, `errors`, `step_failures` | int | this run |
-| `counts` | object | `notes`, `changed`, `deleted`, `deleted_this_run`, `skipped` |
+| `counts` | object | `notes`, `changed`, `deleted`, `deleted_this_run`, `skipped`, `books` |
 
 A run with `filters` set only looked at part of the library: notes outside
 the filter keep their previous entries and are not reported deleted.
@@ -195,6 +204,7 @@ reader that missed a run still sees the deletion.
 | `removed_outputs` | list of paths | files the exporter removed (`--prune-deleted`) |
 | `remaining_outputs` | list of paths | the note's files still on disk |
 | `deleted_this_run` | bool | new in this run, or its files were removed in this run |
+| `deleted_in_run` | int or `null` | the `run.sequence` that recorded the deletion (or last removed its files); `null` for tombstones written before 1.5.0 |
 
 A note is only recorded as deleted after a run that **listed every note of
 its folder** to the end. A failed or interrupted run never records
@@ -206,6 +216,48 @@ Notes this run could not export: `{id, short_id, reason, message, title}`
 with `reason` `locked` (password-protected) or `error` (with Notes' error
 message). A skipped note that was exported before keeps its entry in
 `notes` with its old files.
+
+### `books`
+
+With `--epub-books folder`, one EPUB 3 per Notes folder, in
+`epub-books/<account>/<folder path>.epub` (each folder name a path segment;
+`/`, `\` and `:` become `-`). Each note of the folder is a chapter (its HTML
+output as XHTML, with the images it shows packaged once per book), and the
+table of contents lists the note titles. Chapters are ordered by
+`--epub-book-order`: `modified` (default) or `created`, newest first, or `title`.
+With `--epub-book-subfolders separate` (default) every folder with notes is its
+own book; with `nested` a top-level folder's book holds its subfolders as parts
+(a nested table of contents) and subfolders get no book of their own.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | `<account_id>/<folder_id>`; when a nested book's top folder holds no notes itself its id is `path:<name>` in place of the folder id |
+| `account_id`, `folder_id` | string | |
+| `folder_path` | list of strings | the folder the book is for |
+| `title` | string | the folder's name |
+| `path`, `sha256`, `bytes` | | the file |
+| `notes` | list of ids | the notes in the book, in book order |
+| `nested_folders` | list of folder ids | the subfolders included (`nested` only) |
+| `skipped_notes` | int | notes of the folder left out: locked, or without an HTML output |
+| `changed_this_run`, `changed_in_run` | bool, int | the file or its membership changed in this run |
+| `fingerprint` | string | what the book was built from |
+
+A book is rebuilt only when one of its notes, their order, their images, or the
+options changed; otherwise the file is left as it is (EPUBs are written
+deterministically, so a rebuild of the same notes gives the same bytes). A
+folder with no notes left (all deleted or moved away, the folder deleted) has no
+book: its file is removed and a tombstone goes into `deleted_books`
+(`{id, folder_path, path, deleted_at}`). Runs without `--epub-books folder`
+leave existing books alone. State lives in `data/.epub_books.json`.
+
+Per-note EPUBs (`--convert-epub`) appear as `outputs.epub` like any other
+format. Each is EPUB 3 with `mimetype` first and stored, `nav.xhtml` and
+`toc.ncx`, the note id as a URN (`urn:x-apple-notes:<percent-encoded id>`) in
+`dc:identifier`, its modified date as `dc:date` and `dcterms:modified`, created
+as `dcterms:created`, and the account and folder path as `dc:subject`.
+`dc:language` is `NOTES_EXPORT_EPUB_LANGUAGE` or `und`. Images missing from disk
+or on the web are left out with a `message` warning event; HEIC and TIFF images
+are converted to JPEG (Pillow or `sips`) or left out.
 
 ## Renames, moves and deletes
 
@@ -256,6 +308,11 @@ The ones specific to integration:
 | `NOTES_EXPORT_SUBDIR_FORMAT` | `--subdir-format`, `--folder-hierarchy` | `&account/&folderpath` for nested folders |
 | `NOTES_EXPORT_PRUNE_DELETED` | `--prune-deleted` | |
 | `NOTES_EXPORT_TAGS` | `--tags` | |
+| `NOTES_EXPORT_CONVERT_EPUB` | `--convert-epub` | |
+| `NOTES_EXPORT_EPUB_BOOKS` | `--epub-books` | `none` or `folder` |
+| `NOTES_EXPORT_EPUB_BOOK_ORDER` | `--epub-book-order` | `modified`, `created`, `title` |
+| `NOTES_EXPORT_EPUB_BOOK_SUBFOLDERS` | `--epub-book-subfolders` | `separate`, `nested` |
+| `NOTES_EXPORT_EPUB_LANGUAGE` | | `dc:language` of EPUBs (BCP 47; default `und`) |
 | `NOTES_EXPORT_SKIP_PERMISSION_CHECK` | | `true` to skip the automation pre-check |
 | `NOTES_EXPORT_NOTES_DB` | | another NoteStore.sqlite for `--tags` (tests) |
 | `NOTES_EXPORT_CHROME` | | the Chrome binary for PDF output |

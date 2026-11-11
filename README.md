@@ -1,12 +1,12 @@
 # Apple Notes Export Tool <!-- omit from toc -->
 
-**Version 1.4.0** (unreleased)
+**Version 1.5.0** (unreleased)
 
 <figure style="float: right; margin-left: 10px;">
     <img src="notes-exporter.jpg" alt="Notes Exporter" width="200">
 </figure>
 
-Export Apple Notes to HTML, Markdown, PDF, and Word with images intact. Search across notes by text, date, or AI-powered semantic similarity. Edit markdown locally and sync changes back to Apple Notes.
+Export Apple Notes to HTML, Markdown, PDF, Word and EPUB with images intact, or run it as a service that other programs use over HTTP. Search across notes by text, date, or AI-powered semantic similarity. Edit markdown locally and sync changes back to Apple Notes.
 
 **Thanks to [@sulkaharo](https://github.com/sulkaharo) for performance optimizations and feature improvements!**
 
@@ -24,6 +24,7 @@ Works on macOS only (uses AppleScript). Requires the Notes app.
 | **[Advanced Guide](./GUIDE-ADVANCED.md)** | Power users | Bidirectional sync, AI search, Qdrant, JSON output |
 | **[Technical Reference](./REFERENCE.md)** | Developers | All CLI options, env vars, JSON schemas, file structure |
 | **[Integration Guide](./INTEGRATION.md)** | Other programs | The manifest, JSON Lines events, exit codes, locking |
+| **[Service API](./SERVICE-API.md)** | Other programs, over HTTP | `notes-exporter serve`: runs, schedule, manifest and files, users and API keys |
 
 ## Quick Start
 
@@ -48,7 +49,7 @@ Output goes to `~/Downloads/AppleNotesExport/` by default. Use `python3`, not
 
 **Export** from Apple Notes to multiple formats:
 - Raw HTML, processed HTML (with extracted images), plain text
-- Markdown (for Obsidian, etc.), PDF, Word (DOCX)
+- Markdown (for Obsidian, etc.), PDF, Word (DOCX), EPUB (one book per note, or one per folder)
 - Incremental — only re-exports changed notes (~3x faster than full export)
 - Nested folders kept as nested directories (`--folder-hierarchy`)
 - Images optionally converted (`--image-format jpeg`), `#tags` read with `--tags`
@@ -68,6 +69,14 @@ Output goes to `~/Downloads/AppleNotesExport/` by default. Use `python3`, not
 - Scheduled automatic exports via launchd
 - Machine-readable JSON Lines output from all commands
 - A `manifest.json` describing every note and its files, for other programs ([INTEGRATION.md](./INTEGRATION.md))
+
+## What's New in 1.5.0
+
+### A service other programs can use
+`notes-exporter serve` keeps running, exports on a schedule and serves the manifest and every exported file over an authenticated HTTP API (users with passwords, API keys with scopes, sessions), with a small web page for status, Run now, a live run log, settings, users and keys. `notes-exporter service install` keeps it running as a LaunchAgent. See [Running as a service](#running-as-a-service) and [SERVICE-API.md](./SERVICE-API.md).
+
+### EPUB
+`--convert-epub` makes one EPUB 3 per note, with its images inside. `--epub-books folder` also makes one EPUB per Notes folder, each note a chapter (`--epub-book-order`, `--epub-book-subfolders separate|nested`), rebuilt only when one of its notes changes.
 
 ## What's New in 1.4.0
 
@@ -133,6 +142,18 @@ Homebrew's Python refuses a plain `pip install` outside a virtual environment.
 
 macOS will ask whether your terminal may control Notes on the first run; click Allow. A scheduled or scripted run should use `--non-interactive`, which exits with code 3 instead of waiting at that prompt.
 
+## Running as a service
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+./notes-exporter user add simon --admin       # the first admin (asks for a password)
+./notes-exporter serve                        # http://127.0.0.1:8790/
+```
+
+Open <http://127.0.0.1:8790/>, sign in, set the export folder, formats and schedule under **Settings**, and press **Run now** while you are at the Mac: macOS asks once whether the service may control Notes (click Allow; scheduled runs can't answer that prompt, so they fail with exit code 3 until it is allowed). For another program, create an API key (**API keys**, or `./notes-exporter apikey create --name FunHoard --scopes read,run`) and send it as `Authorization: Bearer ne_…`; keys are never accepted in a URL.
+
+To keep it running after you log in: `./notes-exporter service install` (a LaunchAgent, `com.storizzi.notes-exporter`). If you scheduled exports with `setup_launchd.py` before, install refuses until that job is gone; `--replace-legacy` unloads it and moves its plist aside (it says what it will do first). The service listens on this Mac only unless you pass `--allow-remote`; use a reverse proxy with HTTPS for that. Everything else, the endpoints and the settings are in [SERVICE-API.md](./SERVICE-API.md).
+
 ## Tests
 
 ```bash
@@ -155,5 +176,7 @@ pytest -m json_output    # JSON output
 tests/test.zsh           # All tests
 tests/test.zsh search    # Just search tests
 ```
+
+The service has its own tests (`tests/service`, `tests/e2e`), and `ikt test notes-exporter` (or `node scripts/test-all.js`) runs every tier: `unit`, `service`, `e2e` and, when `epubcheck` is installed, `epubcheck`.
 
 All tests use isolated temp directories and never touch your live data or Apple Notes: the end-to-end tests of `exportnotes.zsh` use a stand-in for `osascript` (`tests/fake_osascript.py`).

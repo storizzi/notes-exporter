@@ -1,5 +1,6 @@
 # Releases <!-- omit from toc -->
 
+- [Unreleased - Release 1.5.0 - Service API \& EPUB](#unreleased---release-150---service-api--epub)
 - [Unreleased - Release 1.4.0 - Nested Folders, Manifest \& Reliable Incremental Export](#unreleased---release-140---nested-folders-manifest--reliable-incremental-export)
 - [18 March 2026 - Release 1.3.0 - Bidirectional Sync, Search \& Venv Support](#18-march-2026---release-130---bidirectional-sync-search--venv-support)
 - [17 March 2026 - Release 1.2.0 - Bug Fix, UTF-8 Support \& File Date Setting](#17-march-2026---release-120---bug-fix-utf-8-support--file-date-setting)
@@ -8,6 +9,37 @@
 - [6 June 2025 - Release 0.3 - Automated Scheduling \& Output Improvements](#6-june-2025---release-03---automated-scheduling--output-improvements)
 - [10 June 2024 - Release 0.2 - Filename format / other file types](#10-june-2024---release-02---filename-format--other-file-types)
 - [8 December 2023 - Release 0.1 - Initial Release](#8-december-2023---release-01---initial-release)
+
+## Unreleased - Release 1.5.0 - Service API & EPUB
+
+notes-exporter can now run as a long-running service that other programs (FunHoard, a backup job, a script) use over HTTP, and exports EPUB.
+
+### Upgrading from 1.4.x <!-- omit from toc -->
+
+Nothing changes for the command line or the nightly job. `requirements.txt` gains the service's dependencies (FastAPI, uvicorn, bcrypt, PyJWT, httpx), so the next run of `exportnotes.zsh` installs them into `.venv`. To use the service, follow [Running as a service](README.md#running-as-a-service); if you scheduled exports with `setup_launchd.py`, let the service take over with `notes-exporter service install --replace-legacy` and set a schedule in its settings.
+
+### Service <!-- omit from toc -->
+
+* **`notes-exporter serve`** (`notes_service/`, FastAPI + uvicorn) on 127.0.0.1:8790: `GET /api/health`, `/status` (running and last run, next scheduled run, Notes automation and Full Disk Access checked without prompting, formats), `/manifest` (verbatim, ETag / 304), `/notes` (changed since a sequence, by account or folder, tombstones), `/notes/{id}`, `/files/{path}` (realpath containment, Range, ETag from the manifest's sha256), `/runs` (start, list, events, log, cancel), `/admin/settings`, `/admin/users`, `/admin/api-keys`. See [SERVICE-API.md](SERVICE-API.md).
+* **Auth**: users with bcrypt passwords and roles admin / reader, JWT sessions with logout, API keys (`ne_…`, stored as SHA-256, scopes read / run / admin, optional expiry, shown once), a login rate limit, credentials in query strings refused, the last admin protected, first-time setup only from the Mac itself.
+* **Runs**: one at a time; `exportnotes.zsh --json-log --non-interactive` in a clean environment, never with `--sync`; progress and counts from the events; cancel stops the whole process group (SIGTERM, then SIGKILL after a grace period); records in sqlite. A run can ask for extra formats (`formats`, a union with the settings) and for folder books.
+* **Schedule**: every N minutes or daily at HH:MM; a time missed while the Mac slept runs once; skipped while a run is in progress.
+* **Web page** at `/`: first-run setup, sign-in, status, Run now, live run log, settings, users, API keys (new key shown once with a Copy button, revoke).
+* **`notes-exporter`** command: `serve`, `user add|list|passwd|remove`, `apikey create|list|revoke`, `service install|uninstall|status` for the `com.storizzi.notes-exporter` LaunchAgent (refuses while the old `com.<user>.notes_exporter` job exists, unless `--replace-legacy`).
+* Every tunable (port, session hours, rate limit, grace period, scheduler tick, …) is a `NOTES_SERVICE_*` variable.
+
+### EPUB <!-- omit from toc -->
+
+* **`--convert-epub`**: one EPUB 3 per note in `epub/`, made from the HTML output: well-formed XHTML, every image it shows packaged (shared images once), nav.xhtml and toc.ncx, the note id as a URN, its dates, account and folder in the metadata. Standard-library zipfile only (no GPL / AGPL dependency). Incremental, deterministic (an unchanged note keeps its sha256), and renamed, moved and pruned like the other formats. `outputs.epub` in the manifest.
+* **`--epub-books folder`**: one EPUB per Notes folder in `epub-books/`, each note a chapter, ordered by `--epub-book-order modified|created|title`; `--epub-book-subfolders nested` makes subfolders parts of their top folder's book. A book is rebuilt only when it changes; a folder with no notes left loses its book. The manifest gains `books` and `deleted_books`.
+
+### Manifest <!-- omit from toc -->
+
+* Additions within version 1: `books`, `deleted_books`, `run.counts.books`, `deleted[].deleted_in_run`, and `epub` in `formats` / `outputs`.
+
+### Tests <!-- omit from toc -->
+
+* Service tests (TestClient with a fake exporter and a fake launchctl), an end-to-end suite on a real server port (also driving the real `exportnotes.zsh` with the fake osascript), EPUB structure and book tests, and `ikt.project.js` so `ikt test notes-exporter` runs the tiers `unit`, `service`, `e2e` and `epubcheck` (optional).
 
 ## Unreleased - Release 1.4.0 - Nested Folders, Manifest & Reliable Incremental Export
 

@@ -26,7 +26,15 @@ Compare note counts across Apple Notes, tracking JSON, disk files, and Qdrant.
 
 ### setup_launchd.py
 
-Configure scheduled automatic exports via macOS launchd.
+Configure scheduled automatic exports via macOS launchd (the older way; the service below has its own schedule).
+
+### notes-exporter (the service)
+
+`notes-exporter serve` runs the HTTP service (`notes_service/`): it runs and schedules exports and serves the manifest and files to other programs with users, sessions and API keys. `notes-exporter user …`, `apikey …` and `service install|uninstall|status` (the `com.storizzi.notes-exporter` LaunchAgent) manage it. Everything is in [SERVICE-API.md](SERVICE-API.md).
+
+### convert_to_epub.py, build_epub_books.py
+
+The `epub` and `books` pipeline steps: one EPUB 3 per note, and one per Notes folder (`epub_builder.py` does the packaging). See [INTEGRATION.md](INTEGRATION.md#books).
 
 ---
 
@@ -42,6 +50,10 @@ Configure scheduled automatic exports via macOS launchd.
 | `--convert-markdown` | `-m` | `false` | Convert to Markdown |
 | `--convert-pdf` | `-p` | `false` | Convert to PDF |
 | `--convert-word` | `-w` | `false` | Convert to Word (DOCX) |
+| `--convert-epub` | — | `false` | Convert each note to an EPUB 3 book (`epub/`) |
+| `--epub-books MODE` | — | `none` | `folder`: also one EPUB per Notes folder (`epub-books/`) |
+| `--epub-book-order ORDER` | — | `modified` | Chapter order: `modified` or `created` (newest first), or `title` |
+| `--epub-book-subfolders HOW` | — | `separate` | `separate` (each folder its own book) or `nested` (subfolders are parts of their top folder's book) |
 | `--all-formats` | `-a` | — | Enable all conversions |
 | `--update-all` | `-U` | `false` | Force full re-export |
 | `--include-deleted` | `-I` | `false` | Include deleted records |
@@ -254,6 +266,11 @@ Fractional values supported: `1.5d`, `0.5h`.
 | `NOTES_EXPORT_CONVERT_TO_MARKDOWN` | `false` | Convert to Markdown |
 | `NOTES_EXPORT_CONVERT_TO_PDF` | `false` | Convert to PDF |
 | `NOTES_EXPORT_CONVERT_TO_WORD` | `false` | Convert to Word |
+| `NOTES_EXPORT_CONVERT_EPUB` | `false` | Convert to EPUB, one per note |
+| `NOTES_EXPORT_EPUB_BOOKS` | `none` | `folder`: one EPUB per Notes folder |
+| `NOTES_EXPORT_EPUB_BOOK_ORDER` | `modified` | `modified`, `created`, `title` |
+| `NOTES_EXPORT_EPUB_BOOK_SUBFOLDERS` | `separate` | `separate`, `nested` |
+| `NOTES_EXPORT_EPUB_LANGUAGE` | `und` | `dc:language` of the EPUBs (BCP 47) |
 | `NOTES_EXPORT_UPDATE_ALL` | `false` | Force full re-export |
 | `NOTES_EXPORT_INCLUDE_DELETED` | `false` | Include deleted records |
 | `NOTES_EXPORT_CLEAN` | `false` | Clear output dirs first |
@@ -338,11 +355,16 @@ Fractional values supported: `1.5d`, `0.5h`.
 | `NOTES_EXPORT_VENV_DIR` | — | Python venv directory |
 | `NOTES_EXPORT_REMOVE_VENV` | `false` | Remove venv after export |
 
+### Service
+
+The `NOTES_SERVICE_*` variables (state directory, host and port, session hours, login rate limit, cancel grace period, scheduler tick, the exporter's PATH and passed-through variables…) are listed in [SERVICE-API.md](SERVICE-API.md#configuration-environment).
+
 ### Testing
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NOTES_TEST_LIMIT` | `10` | Max items per test (0 = unlimited) |
+| `NOTES_EXPORTER_TEST_PYTHON` | `.venv/bin/python` | Python the ikt tiers run pytest with |
 
 ---
 
@@ -664,7 +686,24 @@ notes-exporter/
   qdrant_integration.py        # Qdrant vector DB management
   reconcile.py                 # Cross-system reconciliation
   output_format.py             # JSON Lines output formatting
-  setup_launchd.py             # Scheduling setup
+  setup_launchd.py             # Scheduling setup (older; the service has its own schedule)
+  convert_to_epub.py           # HTML to EPUB 3, one per note
+  build_epub_books.py          # One EPUB per Notes folder
+  epub_builder.py              # EPUB packaging shared by both (standard-library zipfile)
+  notes-exporter               # The service's command: serve, user, apikey, service
+  notes_service/               # The HTTP service (SERVICE-API.md)
+    app.py                     # FastAPI app: endpoints, auth dependencies, web UI
+    auth.py                    # Users (bcrypt), sessions (JWT), API keys (SHA-256), login limit
+    runs.py                    # Run manager: one export at a time, events, cancel, run records
+    scheduler.py               # Interval / daily schedule
+    settings.py                # service.json and the exporter command line
+    exports.py                 # Manifest ETag, note queries, file containment and Range
+    permissions.py             # Automation / Full Disk Access checks that never prompt
+    launchagent.py             # com.storizzi.notes-exporter LaunchAgent
+    cli.py, config.py, db.py   # Command line, NOTES_SERVICE_* settings, sqlite helper
+    web/                       # index.html, app.js, style.css (no build step)
+  ikt.project.js               # Test tiers for ikt test notes-exporter
+  scripts/test-all.js          # The same tiers without the ikt command
   requirements.txt             # Python dependencies
   .notes-exporter-settings.json # User settings (gitignored)
   .env                         # Environment variables (gitignored)
@@ -691,6 +730,9 @@ notes-exporter/
     test_notes_db.py           # Tags from a synthetic Notes database
     test_applescript_handlers.py # Pure AppleScript handlers (no Notes access)
     fake_osascript.py          # Stand-in for export_notes.scpt in tests
+    test_epub.py               # EPUB per note and per folder (structure, images, books)
+    service/                   # Service tests (TestClient, fake exporter, fake launchctl)
+    e2e/                       # The real server on a free port, driven over HTTP
 ```
 
 With `--folder-hierarchy` (`--subdir-format '&account/&folderpath'`) each
@@ -765,6 +807,10 @@ pytest -m "not integration"       # Everything except integration
 | `NOTES_TEST_LIMIT=10` | Default: limit to 10 items per test |
 | `NOTES_TEST_LIMIT=0` | Unlimited items |
 | `pytest --all-items` | Same as `NOTES_TEST_LIMIT=0` |
+
+### Tiers (ikt)
+
+`ikt test notes-exporter` (or `node scripts/test-all.js`) runs four tiers: `unit` (everything under `tests/` except the two service folders), `service` (`tests/service`), `e2e` (`tests/e2e`) and `epubcheck` (EPUB validation, skipped unless `epubcheck` is installed). Each writes JUnit XML to `test-results/`.
 
 ### Test Isolation
 
