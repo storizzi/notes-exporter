@@ -1,5 +1,29 @@
+-- export_notes.scpt - read Apple Notes and write raw HTML / text files.
+--
+-- Read-only: this script never creates, edits or deletes a note.
+--
+-- Arguments (all text, "" for unset):
+--   1 root dir            2 note limit            3 note limit per folder
+--   4 pick probability    5 filename format       6 subdir format
+--   7 use subdirs         8 update all            9 include deleted
+--  10 account filter     11 folder filter        12 modified after
+--  13 python executable  14 script directory     15 folder exclusions
+--
+-- Tracking data goes through tracker_io.py: records are written to a file
+-- with AppleScript's own file I/O and only file paths reach the shell, so
+-- no note title or folder name is ever part of a shell command (#33).
+--
+-- Progress for the caller is logged to stderr as lines starting "@@":
+--   @@PLAN <tab> folders
+--   @@FOLDER <tab> index <tab> total <tab> account <tab> path <tab> notes
+--   @@NOTE <tab> processed so far <tab> note id
+--   @@NOTE_ERROR <tab> note id <tab> message
+--   @@SAVE_ERROR <tab> tracker <tab> message
+--
+-- A live index of every note seen is written to data/.live_notes.tsv for
+-- tracker_io.py finalize, which records deletions and moves (#37).
+
 on run argv
-    -- Reading environment variables for root directory and note limits from arguments
     set envRootDir to item 1 of argv
     set envNoteLimit to item 2 of argv
     set envNoteLimitPerFolder to item 3 of argv
@@ -7,73 +31,60 @@ on run argv
     set envFilenameFormat to item 5 of argv
     set envSubdirFormat to item 6 of argv
     set envUseSubdirs to item 7 of argv
-    set envUpdateAll to item 8 of argv  -- NEW: update all notes flag
-    set envIncludeDeleted to item 9 of argv  -- include deleted records flag (default: false)
-    set envFilterAccounts to item 10 of argv  -- comma-separated account name filter
-    set envFilterFolders to item 11 of argv  -- comma-separated folder name filter
-    set envModifiedAfter to item 12 of argv  -- only export notes modified after this date
+    set envUpdateAll to item 8 of argv
+    set envIncludeDeleted to item 9 of argv
+    set envFilterAccounts to item 10 of argv
+    set envFilterFolders to item 11 of argv
+    set envModifiedAfter to item 12 of argv
+    set envPython to ""
+    if (count of argv) ≥ 13 then set envPython to item 13 of argv
+    set envScriptDir to ""
+    if (count of argv) ≥ 14 then set envScriptDir to item 14 of argv
+    set envExcludeFolders to ""
+    if (count of argv) ≥ 15 then set envExcludeFolders to item 15 of argv
 
-    -- Parse filter lists into AppleScript lists
+    if envPython is "" then
+        set pythonCmd to "/usr/bin/env python3"
+    else
+        set pythonCmd to quoted form of envPython
+    end if
+    if envScriptDir is "" then
+        set envScriptDir to do shell script "dirname " & quoted form of (POSIX path of (path to me))
+    end if
+    if envScriptDir does not end with "/" then set envScriptDir to envScriptDir & "/"
+    set trackerIO to pythonCmd & " " & quoted form of (envScriptDir & "tracker_io.py")
+
     set filterAccountsList to my splitByDelimiter(envFilterAccounts, ",")
     set filterFoldersList to my splitByDelimiter(envFilterFolders, ",")
+    set excludeFoldersList to my splitByDelimiter(envExcludeFolders, ",")
 
-    -- Convert envRootDir to an absolute path if necessary - avoid CFURLGetFSRef was passed a URL which has no scheme warning
     if envRootDir starts with "./" then
-        set currentDirectory to (do shell script "pwd")
-        set envRootDir to currentDirectory & (text 2 through -1 of envRootDir)
+        set envRootDir to (do shell script "pwd") & (text 2 through -1 of envRootDir)
     end if
-
-    -- Ensure envRootDir ends with a "/"
-    if envRootDir does not end with "/" then
-        set envRootDir to envRootDir & "/"
-    end if
-
-    -- Log the final envRootDir
+    if envRootDir does not end with "/" then set envRootDir to envRootDir & "/"
     log "Apple notes output directory: " & envRootDir
 
-    if envNoteLimit is equal to "" then
-        set noteLimit to -1
-    else
-        set noteLimit to envNoteLimit as number
-    end if
+    set noteLimit to -1
+    if envNoteLimit is not "" then set noteLimit to envNoteLimit as number
+    set noteLimitPerFolder to -1
+    if envNoteLimitPerFolder is not "" then set noteLimitPerFolder to envNoteLimitPerFolder as number
+    set notePickProbability to 100
+    if envNotePickProbability is not "" then set notePickProbability to envNotePickProbability as number
+    set updateAllNotes to (envUpdateAll is "true")
+    set includeDeleted to (envIncludeDeleted is "true")
+    set useSubdirs to (envUseSubdirs is "true")
 
-    if envNoteLimitPerFolder is equal to "" then
-        set noteLimitPerFolder to -1
-    else
-        set noteLimitPerFolder to envNoteLimitPerFolder as number
-    end if
-
-    if envNotePickProbability is equal to "" then
-        set notePickProbability to 100
-    else
-        set notePickProbability to envNotePickProbability as number
-    end if
-
-    -- Convert update all flag
-    set updateAllNotes to false
-    if envUpdateAll is equal to "true" then
-        set updateAllNotes to true
-    end if
-
-    -- Convert include deleted flag
-    set includeDeleted to false
-    if envIncludeDeleted is equal to "true" then
-        set includeDeleted to true
-    end if
-
-    -- Parse modified-after date filter
     set modifiedAfterDate to missing value
-    if envModifiedAfter is not equal to "" then
+    if envModifiedAfter is not "" then
         try
-            -- Try to parse the date string (supports locale-dependent formats)
-            set modifiedAfterDate to date envModifiedAfter
-            log "Filtering: only notes modified after " & (modifiedAfterDate as string)
+            set parsedDateStr to do shell script "date -j -f '%Y-%m-%d' " & quoted form of envModifiedAfter & " '+%Y-%m-%d'"
+            set modifiedAfterKey to parsedDateStr & "T00:00:00"
+            set modifiedAfterDate to modifiedAfterKey
+            log "Filtering: only notes modified after " & modifiedAfterKey
         on error
-            -- Try ISO format via shell date parsing
             try
-                set parsedDateStr to do shell script "date -j -f '%Y-%m-%d' '" & envModifiedAfter & "' '+%B %d, %Y %H:%M:%S'"
-                set modifiedAfterDate to date parsedDateStr
-                log "Filtering: only notes modified after " & (modifiedAfterDate as string)
+                set modifiedAfterDate to my isoLocal(date envModifiedAfter)
+                log "Filtering: only notes modified after " & modifiedAfterDate
             on error errMsg
                 log "Warning: Could not parse --modified-after date '" & envModifiedAfter & "': " & errMsg
             end try
@@ -84,377 +95,345 @@ on run argv
     set textDirectory to envRootDir & "text/"
     set dataDirectory to envRootDir & "data/"
     set rawDirectory to envRootDir & "raw/"
-
-    -- Create main directories
-    my createDirectory(rawDirectory) 
+    my createDirectory(rawDirectory)
     my createDirectory(dataDirectory)
     my createDirectory(htmlDirectory)
     my createDirectory(textDirectory)
 
-    -- Variables for statistics
-    set totalNotesOutput to 0
+    -- Statistics
     set totalNotesOverall to 0
-    set totalNotesSkippedUnchanged to 0
-    set totalNotesSkippedOlder to 0
-    set folderStatistics to {}
-    
-    -- Start timing
-    set startTime to (current date)
-    
-    -- Start timing
+    set totalNotesOutput to 0
+    set totalNotesUnchanged to 0
+    set totalNotesFiltered to 0
+    set totalNotesLocked to 0
+    set totalNotesErrors to 0
+    set foldersDone to 0
     set startTime to (current date)
 
-    tell application "Notes"
-        set theAccounts to every account
-        repeat with anAccount in theAccounts
-            set accountName to my makeValidFilename(name of anAccount)
-            set rawAccountName to name of anAccount
+    set livePath to dataDirectory & ".live_notes.tsv"
+    set liveFD to open for access (POSIX file livePath) with write permission
+    set eof of liveFD to 0
 
-            -- Filter accounts if filter is set
-            set accountMatchesFilter to true
-            if envFilterAccounts is not equal to "" then
-                if filterAccountsList does not contain rawAccountName and filterAccountsList does not contain accountName then
-                    set accountMatchesFilter to false
-                    log "Skipping account: " & accountName & " (not in filter)"
-                end if
-            end if
-
-            if accountMatchesFilter then
-            set accountID to my extractAccountID(id of anAccount)
-            set shortAccountID to my extractShortAccountID(accountID)
-            set theFolders to every folder of anAccount
-            repeat with aFolder in theFolders
-                set folderName to my makeValidFilename(name of aFolder)
-                set rawFolderName to name of aFolder
-
-                -- Filter folders if filter is set
-                set folderMatchesFilter to true
-                if envFilterFolders is not equal to "" then
-                    if filterFoldersList does not contain rawFolderName and filterFoldersList does not contain folderName then
-                        set folderMatchesFilter to false
-                        log "Skipping folder: " & folderName & " (not in filter)"
+    set fatalMessage to ""
+    set fatalNumber to 0
+    try
+        with timeout of 900 seconds
+            -- ── Phase 1: plan the folders (names, ids, nesting) ──────────
+            set plan to {}
+            tell application "Notes" to set accountCount to count of accounts
+            repeat with ai from 1 to accountCount
+                tell application "Notes"
+                    set rawAccountName to name of account ai
+                    set accountFullID to id of account ai
+                end tell
+                set accountName to my makeValidFilename(rawAccountName)
+                set accountMatches to true
+                if envFilterAccounts is not "" then
+                    if filterAccountsList does not contain rawAccountName and filterAccountsList does not contain accountName then
+                        set accountMatches to false
+                        log "Skipping account: " & accountName & " (not in filter)"
                     end if
                 end if
-
-                if folderMatchesFilter then
-                set folderNoteCount to 0
-                set outputNoteCount to 0
-
-                -- Determine the data file name based on subdirectory usage
-                if envUseSubdirs is "true" then
-                    set subdirName to my generateFilename(envSubdirFormat, "", "", accountName, folderName, accountID, shortAccountID)
-                    set folderHTMLPath to htmlDirectory & subdirName & "/"
-                    set folderTextPath to textDirectory & subdirName & "/"
-                    set folderRawPath to rawDirectory & subdirName & "/"
-                    my createDirectory(folderHTMLPath)
-                    my createDirectory(folderTextPath)
-                    my createDirectory(folderRawPath)
-                    set notebookDataFile to dataDirectory & subdirName & ".json"
-                    log "Notebook: " & (subdirName)
-                else
-                    set folderHTMLPath to htmlDirectory
-                    set folderTextPath to textDirectory
-                    set folderRawPath to rawDirectory
-                    -- Use a combination of account and folder for flat structure
-                    set flatName to accountName & "-" & folderName
-                    set notebookDataFile to dataDirectory & flatName & ".json"
-                    log "Notebook: " & (folderName)
-                end if
-
-                -- Load existing notebook data
-                log "Loading existing notebook data from: " & notebookDataFile
-                set existingData to my loadNotebookData(notebookDataFile, includeDeleted)
-                if includeDeleted then
-                    log "Loaded " & (count of existingData) & " existing note records (including deleted)"
-                else
-                    log "Loaded " & (count of existingData) & " existing note records (excluding deleted)"
-                end if
-
-                -- Batch fetch IDs and modification dates (2 Apple Events instead of 2*N)
-                set allFullIDs to id of every note of aFolder
-                set allModDates to modification date of every note of aFolder
-                set noteCount to count of allFullIDs
-
-                -- Extract note IDs for tracking (pure string processing, no Apple Events)
-                set currentNoteIDs to {}
-                set extractedIDs to {}
-                repeat with i from 1 to noteCount
-                    set anID to my extractID(item i of allFullIDs)
-                    set end of extractedIDs to anID
-                    set end of currentNoteIDs to anID
-                end repeat
-
-                -- Get the latest modification date from existing data for incremental updates
-                set latestExistingModDate to missing value
-                if not updateAllNotes and (count of existingData) > 0 then
-                    log "Calculating latest modification date from " & (count of existingData) & " existing records..."
-                    set latestExistingModDate to my getLatestModificationDate(existingData)
-                    if latestExistingModDate is not missing value then
-                        log "Latest existing modification date: " & (latestExistingModDate as string)
-                    else
-                        log "No valid modification dates found"
-                    end if
-                else
-                    log "Processing all notes (full update mode or no existing data)"
-                end if
-
-                -- Log folder start
-                log "Processing " & noteCount & " notes in folder: " & folderName
-
-                repeat with i from 1 to noteCount
-                    set noteID to item i of extractedIDs
-                    set noteModDate to item i of allModDates
-                    set totalNotesOverall to totalNotesOverall + 1
-
-                    -- Check limits first (cheapest operation)
-                    if (noteLimit ≠ -1 and totalNotesOutput ≥ noteLimit) or (noteLimitPerFolder ≠ -1 and folderNoteCount ≥ noteLimitPerFolder) then
-                        log "Reached note limit, stopping processing for this folder"
-                        exit repeat
-                    end if
-
-                    -- Date filter check (no Apple Events needed)
-                    set passesDateFilter to true
-                    if modifiedAfterDate is not missing value then
-                        if noteModDate ≤ modifiedAfterDate then
-                            set passesDateFilter to false
-                        end if
-                    end if
-
-                    -- Random selection check (no Apple Events needed)
-                    if passesDateFilter and (random number from 1 to 100) ≤ notePickProbability then
-
-                        -- Log progress every 100 notes
-                        if (totalNotesOverall mod 100) = 0 then
-                            log "Checked " & totalNotesOverall & " notes so far..."
-                        end if
-
-                        -- Quick incremental update check (all in-memory, no Apple Events)
-                        set shouldProcess to false
-                        if updateAllNotes then
-                            set shouldProcess to true
-                        else
-                            if latestExistingModDate is missing value or noteModDate > latestExistingModDate then
-                                set shouldProcess to true
-                            else
-                                set shouldProcess to my shouldProcessNote(existingData, noteID, noteModDate)
+                if accountMatches then
+                    set accountID to my extractAccountID(accountFullID)
+                    set shortAccountID to my extractShortAccountID(accountID)
+                    tell application "Notes"
+                        set folderIDs to id of every folder of account ai
+                        set folderNames to name of every folder of account ai
+                    end tell
+                    set parentIDs to {}
+                    repeat with fi from 1 to count of folderIDs
+                        set parentID to ""
+                        try
+                            tell application "Notes" to set parentID to id of container of folder fi of account ai
+                        end try
+                        if parentID does not contain "/ICFolder/" then set parentID to ""
+                        set end of parentIDs to parentID
+                    end repeat
+                    repeat with fi from 1 to count of folderIDs
+                        set rawFolderName to item fi of folderNames
+                        set folderName to my makeValidFilename(rawFolderName)
+                        set rawPath to my folderPathNames(fi, folderIDs, folderNames, parentIDs)
+                        set rawPathText to my joinList(rawPath, "/")
+                        set safePathText to my joinList(my sanitizeList(rawPath), "/")
+                        set folderMatches to true
+                        if envFilterFolders is not "" then
+                            if filterFoldersList does not contain rawFolderName and filterFoldersList does not contain folderName and filterFoldersList does not contain rawPathText then
+                                set folderMatches to false
                             end if
                         end if
+                        if envExcludeFolders is not "" then
+                            if excludeFoldersList contains rawFolderName or excludeFoldersList contains folderName or excludeFoldersList contains rawPathText then
+                                set folderMatches to false
+                            end if
+                        end if
+                        if folderMatches then
+                            set end of plan to {jAccountIndex:ai, jFolderIndex:fi, jRawAccount:rawAccountName, jAccount:accountName, jAccountFullID:accountFullID, jAccountID:accountID, jShortAccountID:shortAccountID, jFolderID:(item fi of folderIDs), jRawFolder:rawFolderName, jFolder:folderName, jRawPath:rawPath, jSafePath:safePathText}
+                        else
+                            log "Skipping folder: " & rawPathText & " (filtered)"
+                        end if
+                    end repeat
+                end if
+            end repeat
 
-                        if shouldProcess then
-                            -- Only NOW access the individual note via Notes API (expensive)
-                            set theNote to note i of aFolder
-                            set noteCreatedDate to creation date of theNote
-                            set noteTitle to my makeValidFilename(name of theNote)
-                            set noteName to my generateFilename(envFilenameFormat, noteTitle, noteID, accountName, folderName, accountID, shortAccountID)
+            set planCount to count of plan
+            log "@@PLAN" & tab & planCount
 
-                            -- Get old filename for comparison
-                            set oldFileName to ""
-                            repeat with currentRecord in existingData
-                                if (noteID_key of currentRecord) = noteID then
-                                    set oldFileName to (filename of currentRecord)
-                                    exit repeat
+            -- ── Phase 2: export each planned folder ─────────────────────
+            repeat with planIndex from 1 to planCount
+                set job to item planIndex of plan
+                set ai to jAccountIndex of job
+                set fi to jFolderIndex of job
+                set accountName to jAccount of job
+                set folderName to jFolder of job
+
+                if useSubdirs then
+                    set subdirName to my generateFilename(envSubdirFormat, "", "", accountName, folderName, jAccountID of job, jShortAccountID of job, jSafePath of job)
+                    set trackerName to my trackerNameFor(subdirName)
+                    set subdirPrefix to subdirName & "/"
+                else
+                    set subdirName to ""
+                    set trackerName to accountName & "-" & folderName
+                    set subdirPrefix to ""
+                end if
+                set folderHTMLPath to htmlDirectory & subdirPrefix
+                set folderTextPath to textDirectory & subdirPrefix
+                set folderRawPath to rawDirectory & subdirPrefix
+                my createDirectory(folderHTMLPath)
+                my createDirectory(folderTextPath)
+                my createDirectory(folderRawPath)
+                set notebookDataFile to dataDirectory & trackerName & ".json"
+
+                -- Existing records: parallel lists for lookups
+                set existing to my loadNotebookData(trackerIO, notebookDataFile, includeDeleted)
+                set exIDs to item 1 of existing
+                set exFilenames to item 2 of existing
+                set exISOKeys to item 3 of existing
+                set exLegacyKeys to item 4 of existing
+
+                -- Batch fetch: a handful of Apple Events per folder
+                tell application "Notes"
+                    set aFolder to folder fi of account ai
+                    set allFullIDs to id of every note of aFolder
+                    set allModDates to modification date of every note of aFolder
+                    set allCreated to creation date of every note of aFolder
+                    set allNames to name of every note of aFolder
+                end tell
+                set noteCount to count of allFullIDs
+                set allLocked to {}
+                try
+                    tell application "Notes" to set allLocked to password protected of every note of aFolder
+                end try
+                set allShared to {}
+                try
+                    tell application "Notes" to set allShared to shared of every note of aFolder
+                end try
+
+                set folderPathField to my tsvEscape(my joinList(jRawPath of job, character id 31))
+                log "@@FOLDER" & tab & planIndex & tab & planCount & tab & my tsvEscape(jRawAccount of job) & tab & my tsvEscape(my joinList(jRawPath of job, "/")) & tab & noteCount
+
+                set folderNoteCount to 0
+                set liveText to ""
+                set changedText to ""
+                repeat with i from 1 to noteCount
+                    set fullID to item i of allFullIDs
+                    set noteID to my extractID(fullID)
+                    set noteModDate to item i of allModDates
+                    set noteCreatedDate to item i of allCreated
+                    set modISO to my isoLocal(noteModDate)
+                    set createdISO to my isoLocal(noteCreatedDate)
+                    set rawTitle to item i of allNames
+                    set isLocked to false
+                    if (count of allLocked) ≥ i then set isLocked to (item i of allLocked)
+                    set isShared to false
+                    if (count of allShared) ≥ i then set isShared to (item i of allShared)
+                    set totalNotesOverall to totalNotesOverall + 1
+
+                    set liveText to liveText & "N" & tab & my tsvEscape(trackerName) & tab & noteID & tab & fullID & tab & my tsvEscape(rawTitle) & tab & createdISO & tab & modISO & tab & my tsvEscape(jRawAccount of job) & tab & (jAccountFullID of job) & tab & (jFolderID of job) & tab & folderPathField & tab & my tsvEscape(subdirName) & tab & my boolText(isLocked) & tab & my boolText(isShared) & linefeed
+
+                    -- Decide whether to export this note
+                    set wanted to true
+                    if (noteLimit ≠ -1 and totalNotesOutput ≥ noteLimit) or (noteLimitPerFolder ≠ -1 and folderNoteCount ≥ noteLimitPerFolder) then set wanted to false
+                    if wanted and modifiedAfterDate is not missing value then
+                        if modISO ≤ modifiedAfterDate then set wanted to false
+                    end if
+                    if wanted and notePickProbability < 100 then
+                        if (random number from 1 to 100) > notePickProbability then set wanted to false
+                    end if
+                    if not wanted then set totalNotesFiltered to totalNotesFiltered + 1
+
+                    set exIndex to my indexOfItem(noteID, exIDs)
+                    set shouldProcess to false
+                    if wanted then
+                        if updateAllNotes or exIndex is 0 then
+                            set shouldProcess to true
+                        else if (item exIndex of exISOKeys) is not "" then
+                            set shouldProcess to ((item exIndex of exISOKeys) is not modISO)
+                        else
+                            set shouldProcess to ((item exIndex of exLegacyKeys) is not (noteModDate as string))
+                        end if
+                        if not shouldProcess then set totalNotesUnchanged to totalNotesUnchanged + 1
+                    end if
+
+                    if shouldProcess and isLocked then
+                        set shouldProcess to false
+                        set totalNotesLocked to totalNotesLocked + 1
+                        log "- Note " & noteID & " is locked (password protected); skipped"
+                    end if
+
+                    if shouldProcess then
+                        try
+                            set theNote to missing value
+                            tell application "Notes"
+                                try
+                                    set theNote to note id fullID
+                                end try
+                                if theNote is missing value then
+                                    set theNote to note i of aFolder
+                                    if (id of theNote) is not fullID then error "the folder changed while it was being exported"
                                 end if
-                            end repeat
+                                set htmlContent to body of theNote
+                                set textContent to plaintext of theNote
+                            end tell
+                            set noteTitle to my makeValidFilename(rawTitle)
+                            set noteName to my generateFilename(envFilenameFormat, noteTitle, noteID, accountName, folderName, jAccountID of job, jShortAccountID of job, jSafePath of job)
+                            set oldFileName to ""
+                            if exIndex > 0 then set oldFileName to item exIndex of exFilenames
+
+                            if not my writeToFile(POSIX path of (folderRawPath & noteName & ".html"), htmlContent) then error "could not write the raw HTML file"
+                            if not my writeToFile(POSIX path of (folderTextPath & noteName & ".txt"), textContent) then error "could not write the text file"
+                            my handleFilenameChange(envRootDir, subdirPrefix, oldFileName, noteName)
+
+                            set changedText to changedText & noteID & tab & fullID & tab & noteName & tab & my tsvEscape(rawTitle) & tab & createdISO & tab & modISO & tab & (noteCreatedDate as string) & tab & (noteModDate as string) & tab & my tsvEscape(jRawAccount of job) & tab & (jAccountFullID of job) & tab & (jFolderID of job) & tab & folderPathField & tab & my tsvEscape(subdirName) & linefeed
 
                             set folderNoteCount to folderNoteCount + 1
                             set totalNotesOutput to totalNotesOutput + 1
-                            set outputNoteCount to outputNoteCount + 1
-
-                            log "- Note: " & noteTitle & " (processing)"
-
-                            -- Read content only for changed notes (expensive)
-                            set htmlContent to body of theNote
-                            set textContent to plaintext of theNote
-
-                            -- Generate file paths
-                            set noteRawPath to POSIX path of (folderRawPath & noteName & ".html")
-                            set noteTextPath to POSIX path of (folderTextPath & noteName & ".txt")
-
-                            -- Save files
-                            my writeToFile(noteRawPath, htmlContent)
-                            my writeToFile(noteTextPath, textContent)
-
-                            -- Handle filename changes
-                            my handleFilenameChange(existingData, noteID, oldFileName, noteName, folderRawPath, folderTextPath)
-
-                            -- Capture full note ID for sync-back
-                            set fullNoteID to item i of allFullIDs
-
-                            -- Update data record (now includes fullNoteId)
-                            set existingData to my updateNoteData(existingData, noteID, noteModDate, noteCreatedDate, noteName, fullNoteID)
-                        else
-                            -- Count skipped notes by reason (no Apple Events needed)
-                            if latestExistingModDate is not missing value and noteModDate ≤ latestExistingModDate then
-                                set totalNotesSkippedOlder to totalNotesSkippedOlder + 1
-                            else
-                                set totalNotesSkippedUnchanged to totalNotesSkippedUnchanged + 1
-                            end if
-                        end if
+                            log "@@NOTE" & tab & totalNotesOutput & tab & noteID
+                        on error errMsg number errNum
+                            if errNum is -1743 or errNum is -128 or errNum is -600 or errNum is -609 then error errMsg number errNum
+                            set totalNotesErrors to totalNotesErrors + 1
+                            log "@@NOTE_ERROR" & tab & noteID & tab & my tsvEscape(errMsg)
+                            set liveText to liveText & "E" & tab & my tsvEscape(trackerName) & tab & noteID & tab & fullID & tab & my tsvEscape(errMsg) & linefeed
+                        end try
                     end if
                 end repeat
-                set end of folderStatistics to {folderName, noteCount, outputNoteCount}
-                
-                -- Only save if we actually processed some notes or if we have changes to mark deleted notes
-                set existingData to my markDeletedNotes(existingData, currentNoteIDs)
-                if outputNoteCount > 0 then
-                    log "Saving data because " & outputNoteCount & " notes were processed"
-                    my saveNotebookData(notebookDataFile, existingData)
-                else
-                    log "No notes were processed, skipping data save"
+
+                -- Save processed notes, then record that this folder was read completely
+                if changedText is not "" then
+                    set saveResult to my saveNotebookData(trackerIO, notebookDataFile, changedText, dataDirectory)
+                    if saveResult is not "" then
+                        set totalNotesErrors to totalNotesErrors + 1
+                        log "@@SAVE_ERROR" & tab & my tsvEscape(trackerName) & tab & my tsvEscape(saveResult)
+                    end if
                 end if
-                end if -- folderMatchesFilter
+                set liveText to liveText & "F" & tab & my tsvEscape(trackerName) & tab & (jFolderID of job) & tab & my tsvEscape(subdirName) & linefeed
+                write liveText to liveFD starting at eof as «class utf8»
+                set foldersDone to foldersDone + 1
             end repeat
-            end if -- accountMatchesFilter
-        end repeat
-    end tell
-
-    -- Calculate timing and rates
-    set endTime to (current date)
-    set elapsedSeconds to (endTime - startTime)
-    
-    -- Write statistics to a temporary file for the zsh script to read (using shell for reliability)
-    set statsFile to dataDirectory & "export_stats.tmp"
-    
-    -- Convert numbers to strings and concatenate properly, including elapsed time
-    set statsContent to (totalNotesOverall as string) & ":" & (totalNotesOutput as string) & ":" & (totalNotesSkippedUnchanged as string) & ":" & (totalNotesSkippedOlder as string) & ":" & ((count of folderStatistics) as string) & ":" & (elapsedSeconds as string)
-    
-    log "DEBUG: About to write stats - " & statsContent
-    log "DEBUG: Writing to file: " & statsFile
-    
-    -- Use shell command for reliable text writing
-    try
-        do shell script "echo " & quoted form of statsContent & " > " & quoted form of statsFile
-        log "DEBUG: Successfully wrote stats file"
-        
-        -- Verify the file was created
-        set verifyContent to do shell script "cat " & quoted form of statsFile
-        log "DEBUG: File verification - content: " & verifyContent
-    on error errMsg
-        log "ERROR: Failed to write stats file: " & errMsg
+        end timeout
+        write ("END" & linefeed) to liveFD starting at eof as «class utf8»
+    on error errMsg number errNum
+        set fatalMessage to errMsg
+        set fatalNumber to errNum
     end try
-    
-    log "Statistics written to: " & statsFile
+    try
+        close access liveFD
+    end try
 
-    -- Output statistics
+    set elapsedSeconds to (current date) - startTime
+    set statsContent to "total=" & totalNotesOverall & linefeed & "processed=" & totalNotesOutput & linefeed & "unchanged=" & totalNotesUnchanged & linefeed & "filtered=" & totalNotesFiltered & linefeed & "locked=" & totalNotesLocked & linefeed & "errors=" & totalNotesErrors & linefeed & "folders=" & foldersDone & linefeed & "elapsed=" & elapsedSeconds & linefeed & "fatal_number=" & fatalNumber & linefeed
+    my writeToFile(dataDirectory & "export_stats.tmp", statsContent)
+
     log "==== EXPORT STATISTICS ===="
-    log "Folders Parsed: " & (count of folderStatistics)
+    log "Folders Parsed: " & foldersDone
     log "Total Notes Examined: " & totalNotesOverall
     log "Total Notes Processed/Updated: " & totalNotesOutput
-    log "Total Notes Skipped (Unchanged): " & totalNotesSkippedUnchanged
-    log "Total Notes Skipped (Not Modified Since Last Export): " & totalNotesSkippedOlder
+    log "Total Notes Skipped (Unchanged): " & totalNotesUnchanged
+    log "Total Notes Skipped (Filtered): " & totalNotesFiltered
+    log "Locked Notes Skipped: " & totalNotesLocked
+    log "Errors: " & totalNotesErrors
     log "Processing Time: " & elapsedSeconds & " seconds"
-    
-    -- Calculate and display rates
-    if elapsedSeconds > 0 then
-        set overallRate to round((totalNotesOverall / elapsedSeconds) * 10) / 10
-        log "Overall Processing Rate: " & overallRate & " notes/second"
-        
-        if totalNotesOutput > 0 then
-            set updateRate to round((totalNotesOutput / elapsedSeconds) * 10) / 10
-            log "Update Rate: " & updateRate & " notes/second"
-        end if
-        
-        set totalSkipped to totalNotesSkippedUnchanged + totalNotesSkippedOlder
-        if totalSkipped > 0 then
-            set skipRate to round((totalSkipped / elapsedSeconds) * 10) / 10
-            log "Skip Rate: " & skipRate & " notes/second"
-        end if
-    end if
-    
-    -- Calculate percentages
-    if totalNotesOverall > 0 then
-        set processedPercent to round ((totalNotesOutput / totalNotesOverall) * 100)
-        set unchangedPercent to round ((totalNotesSkippedUnchanged / totalNotesOverall) * 100)
-        set olderPercent to round ((totalNotesSkippedOlder / totalNotesOverall) * 100)
-        log "Processing Rate: " & processedPercent & "% processed, " & unchangedPercent & "% unchanged, " & olderPercent & "% older"
-    end if
-    
-    if updateAllNotes then
-        log "Update mode: Full update (all notes processed)"
-    else
-        log "Update mode: Incremental update (only modified notes processed)"
-    end if
-    
-    -- Output folder-by-folder statistics
-    log "==== FOLDER BREAKDOWN ===="
-    repeat with stat in folderStatistics
-        set folderName to item 1 of stat
-        set totalCount to item 2 of stat
-        set outputCount to item 3 of stat
-        log "Folder: " & folderName & " - Total: " & totalCount & ", Processed: " & outputCount
-    end repeat
-    log "============================"
+
+    if fatalMessage is not "" then error fatalMessage number fatalNumber
 end run
 
--- NEW: Get the latest modification date from existing data
-on getLatestModificationDate(existingData)
-    set latestDate to missing value
-    repeat with currentRecord in existingData
-        try
-            set recordModDate to date ((modified of currentRecord) as string)
-            if latestDate is missing value or recordModDate > latestDate then
-                set latestDate to recordModDate
-            end if
-        on error
-            -- Skip records with invalid dates
-        end try
+-- ── Folder hierarchy ──────────────────────────────────────────────────────
+
+-- Raw folder names from the top-level folder down to folder fi.
+on folderPathNames(fi, folderIDs, folderNames, parentIDs)
+    set pathNames to {item fi of folderNames}
+    set currentParent to item fi of parentIDs
+    set guard to 0
+    repeat while currentParent is not "" and guard < 200
+        set guard to guard + 1
+        set parentIndex to my indexOfItem(currentParent, folderIDs)
+        if parentIndex is 0 then exit repeat
+        set beginning of pathNames to item parentIndex of folderNames
+        set currentParent to item parentIndex of parentIDs
     end repeat
-    return latestDate
-end getLatestModificationDate
+    return pathNames
+end folderPathNames
 
--- NEW: Sort notes by modification date (newest first)
-on sortNotesByModificationDate(notesList)
-    tell application "Notes"
-        log "Starting to sort notes by modification date..."
-        -- Convert to a list of records with dates for sorting
-        set noteRecords to {}
-        set noteCount to count of notesList
-        log "Converting " & noteCount & " notes to sortable records..."
-        
-        repeat with i from 1 to noteCount
-            set aNote to item i of notesList
-            set noteModDate to modification date of aNote
-            set end of noteRecords to {noteRef:aNote, modDate:noteModDate}
-            
-            -- Log progress for large collections
-            if (i mod 100) = 0 then
-                log "Converted " & i & "/" & noteCount & " notes for sorting..."
-            end if
-        end repeat
-        
-        log "Starting bubble sort of " & (count of noteRecords) & " note records..."
-        -- Simple bubble sort (could be optimized but adequate for most use cases)
-        set listSize to count of noteRecords
-        repeat with i from 1 to listSize - 1
-            repeat with j from 1 to listSize - i
-                set currentRecord to item j of noteRecords
-                set nextRecord to item (j + 1) of noteRecords
-                if (modDate of currentRecord) < (modDate of nextRecord) then
-                    -- Swap records
-                    set item j of noteRecords to nextRecord
-                    set item (j + 1) of noteRecords to currentRecord
-                end if
-            end repeat
-            
-            -- Log progress for large sorts
-            if (i mod 50) = 0 then
-                log "Sort progress: " & i & "/" & (listSize - 1) & " passes completed..."
-            end if
-        end repeat
-        
-        log "Extracting sorted note references..."
-        -- Extract just the note references in sorted order
-        set sortedNotes to {}
-        repeat with noteRecord in noteRecords
-            set end of sortedNotes to (noteRef of noteRecord)
-        end repeat
-        
-        log "Note sorting completed"
-        return sortedNotes
-    end tell
-end sortNotesByModificationDate
+on sanitizeList(theList)
+    set out to {}
+    repeat with anItem in theList
+        set end of out to my makeValidFilename(anItem as text)
+    end repeat
+    return out
+end sanitizeList
 
--- Subroutine to create a directory if it doesn't exist
+-- Tracker file names are flat; '/' from a nested subdir is percent-encoded.
+on trackerNameFor(subdirName)
+    set encoded to my replaceText("%", "%25", subdirName)
+    return my replaceText("/", "%2F", encoded)
+end trackerNameFor
+
+-- ── Small pure helpers (tested in tests/test_applescript_handlers.py) ─────
+
+on indexOfItem(theValue, theList)
+    repeat with i from 1 to count of theList
+        if (item i of theList) is theValue then return i
+    end repeat
+    return 0
+end indexOfItem
+
+on joinList(theList, delimiter)
+    set AppleScript's text item delimiters to delimiter
+    set joined to theList as text
+    set AppleScript's text item delimiters to ""
+    return joined
+end joinList
+
+on boolText(aValue)
+    try
+        if aValue then return "1"
+    end try
+    return "0"
+end boolText
+
+on pad2(n)
+    set n to n as integer
+    if n < 10 then return "0" & n
+    return n as text
+end pad2
+
+-- Locale-independent local wall-clock time: YYYY-MM-DDTHH:MM:SS
+on isoLocal(d)
+    set y to (year of d) as integer
+    set m to (month of d) as integer
+    return (y as text) & "-" & my pad2(m) & "-" & my pad2(day of d) & "T" & my pad2(hours of d) & ":" & my pad2(minutes of d) & ":" & my pad2(seconds of d)
+end isoLocal
+
+-- Escape a field for the tab-separated files tracker_io.py reads.
+on tsvEscape(t)
+    set t to t as text
+    set t to my replaceText("\\", "\\\\", t)
+    set t to my replaceText(tab, "\\t", t)
+    set t to my replaceText(linefeed, "\\n", t)
+    set t to my replaceText(return, "\\r", t)
+    return t
+end tsvEscape
+
 on createDirectory(directoryPath)
     do shell script "mkdir -p " & quoted form of directoryPath
 end createDirectory
@@ -482,55 +461,51 @@ on writeToFile(filePath, content)
     end try
 end writeToFile
 
--- Subroutine to generate a valid filename, replace certain characters with dashes, remove non-alphanumeric characters (except dashes), and consolidate multiple dashes
+-- Make a name safe for a file name: problem characters become dashes,
+-- runs of dashes collapse, leading/trailing dashes go.
 on makeValidFilename(fileName)
-    -- Replace only the genuinely problematic characters with dashes
-    set charactersToReplace to {"/", ":", "\\", "|", "<", ">", "\"", "'", "?", "*", "_", " ", ".", ",", tab}
+    set charactersToReplace to {"/", ":", "\\", "|", "<", ">", "\"", "'", "?", "*", "_", " ", ".", ",", tab, linefeed, return}
     repeat with aChar in charactersToReplace
         set AppleScript's text item delimiters to aChar
         set fileName to text items of fileName
         set AppleScript's text item delimiters to "-"
         set fileName to fileName as string
     end repeat
+    set AppleScript's text item delimiters to ""
 
-    -- Consolidate multiple dashes into a single dash
     repeat while fileName contains "--"
         set AppleScript's text item delimiters to "--"
         set textItems to text items of fileName
         set AppleScript's text item delimiters to "-"
         set fileName to textItems as string
     end repeat
+    set AppleScript's text item delimiters to ""
 
-    -- Remove leading/trailing dashes
     repeat while fileName starts with "-" and length of fileName > 1
         set fileName to text 2 through -1 of fileName
     end repeat
-    
     repeat while fileName ends with "-" and length of fileName > 1
         set fileName to text 1 through -2 of fileName
     end repeat
-
-    -- Ensure filename isn't empty
-    if fileName is "" or fileName is "-" then
-        set fileName to "untitled"
-    end if
-
+    if fileName is "" or fileName is "-" then set fileName to "untitled"
     return fileName
 end makeValidFilename
 
--- Subroutine to generate a filename based on the specified format
-on generateFilename(format, title, id, account, folder, accountID, shortAccountID)
-    set formattedFilename to format
-    set formattedFilename to my replaceText("&title", title, formattedFilename)
-    set formattedFilename to my replaceText("&id", id, formattedFilename)
-    set formattedFilename to my replaceText("&account", account, formattedFilename)
-    set formattedFilename to my replaceText("&folder", folder, formattedFilename)
-    set formattedFilename to my replaceText("&accountid", accountID, formattedFilename)
-    set formattedFilename to my replaceText("&shortaccountid", shortAccountID, formattedFilename)
-    return formattedFilename
+-- Fill a filename / subdirectory template. Longer tokens are replaced first
+-- (&accountid used to be eaten by &account, &folderpath by &folder).
+on generateFilename(format, title, noteID, account, folder, accountID, shortAccountID, folderPath)
+    set s to format
+    set s to my replaceText("&shortaccountid", shortAccountID, s)
+    set s to my replaceText("&accountid", accountID, s)
+    set s to my replaceText("&account", account, s)
+    set s to my replaceText("&folderpath", folderPath, s)
+    set s to my replaceText("&path", folderPath, s)
+    set s to my replaceText("&folder", folder, s)
+    set s to my replaceText("&title", title, s)
+    set s to my replaceText("&id", noteID, s)
+    return s
 end generateFilename
 
--- Subroutine to replace occurrences of a substring within a string
 on replaceText(find, replace, subject)
     set AppleScript's text item delimiters to find
     set subject to text items of subject
@@ -540,446 +515,126 @@ on replaceText(find, replace, subject)
     return subject
 end replaceText
 
--- Subroutine to extract the portion of the ID
+-- x-coredata://STORE/ICNote/p123 -> 123
 on extractID(fullID)
     set AppleScript's text item delimiters to "/"
     set idComponents to text items of fullID
-    set extractedID to item 5 of idComponents -- The ID is the fifth component
-    if extractedID starts with "p" then
-        set extractedID to text 2 through -1 of extractedID
-    end if
     set AppleScript's text item delimiters to ""
+    set extractedID to last item of idComponents
+    if extractedID starts with "p" then set extractedID to text 2 through -1 of extractedID
     return extractedID
 end extractID
 
--- Subroutine to extract the account ID
+-- x-coredata://STORE/ICAccount/p1 -> STORE
 on extractAccountID(fullID)
     set AppleScript's text item delimiters to "/"
     set idComponents to text items of fullID
-    set accountID to item 3 of idComponents -- The account ID is the third component
     set AppleScript's text item delimiters to ""
-    return accountID
+    if (count of idComponents) ≥ 3 then return item 3 of idComponents
+    return fullID
 end extractAccountID
 
--- Subroutine to extract the short account ID
+-- STORE UUID -> its last group
 on extractShortAccountID(accountID)
     set AppleScript's text item delimiters to "-"
     set idComponents to text items of accountID
-    set shortAccountID to item 5 of idComponents -- The short account ID is the fifth component
     set AppleScript's text item delimiters to ""
-    return shortAccountID
+    return last item of idComponents
 end extractShortAccountID
 
--- Load existing notebook data from JSON file (optimized with file existence check)
-on loadNotebookData(filePath, includeDeleted)
-    try
-        -- Quick file existence check (avoids Python overhead)
-        set fileCheckCommand to "test -f " & quoted form of filePath & " && echo 'exists' || echo 'missing'"
-        set fileExists to do shell script fileCheckCommand
-
-        if fileExists contains "missing" then
-            log "JSON file does not exist: " & filePath & " - starting fresh"
-            return {}
-        end if
-
-        -- Build Python command with includeDeleted flag
-        set skipDeleted to "False"
-        if not includeDeleted then
-            set skipDeleted to "True"
-        end if
-
-        log "Loading JSON data from: " & filePath
-        set loadCommand to "python3 -c \"
-import json, sys
-
-try:
-    with open('" & filePath & "', 'r') as f:
-        data = json.load(f)
-
-    if not data:
-        print('')
-        sys.exit(0)
-
-    # Convert to list format for AppleScript
-    records = []
-    skip_deleted = " & skipDeleted & "
-
-    for note_id, record in data.items():
-        # Skip deleted notes during loading to reduce memory (unless includeDeleted is true)
-        if skip_deleted and 'deletedDate' in record:
-            continue
-
-        rec = [
-            note_id,
-            record.get('filename', ''),
-            record.get('created', ''),
-            record.get('modified', ''),
-            record.get('firstExported', ''),
-            record.get('lastExported', ''),
-            str(record.get('exportCount', 1)),
-            record.get('deletedDate', ''),
-            record.get('fullNoteId', '')
-        ]
-        records.append('|'.join(rec))
-
-    print('\\n'.join(records))
-except Exception as e:
-    print('')
-\""
-        set pythonResult to do shell script loadCommand
-
-        if pythonResult is equal to "" then
-            log "No active records found - starting fresh"
-            return {}
-        end if
-
-        set parsedData to my parseLoadedData(pythonResult)
-        log "Loaded " & (count of parsedData) & " note records"
-        return parsedData
-    on error errMsg
-        log "Error loading JSON data: " & errMsg
-        return {}
-    end try
-end loadNotebookData
-
--- Parse loaded data into AppleScript records
-on parseLoadedData(dataString)
-    set recordList to {}
-    
-    if dataString = "" then 
-        return recordList
-    end if
-    
-    if dataString = "[]" then
-        return recordList
-    end if
-    
-    set dataLines to paragraphs of dataString
-    
-    repeat with i from 1 to count of dataLines
-        set dataLine to item i of dataLines
-        if dataLine ≠ "" then
-            set recordParts to my splitByDelimiter(dataLine, "|")
-            if (count of recordParts) ≥ 7 then
-                set noteRecord to {noteID_key:(item 1 of recordParts), filename:(item 2 of recordParts), created:(item 3 of recordParts), modified:(item 4 of recordParts), firstExported:(item 5 of recordParts), lastExported:(item 6 of recordParts), exportCount:((item 7 of recordParts) as integer)}
-                if (count of recordParts) ≥ 8 and (item 8 of recordParts) ≠ "" then
-                    set noteRecord to noteRecord & {deletedDate:(item 8 of recordParts)}
-                end if
-                if (count of recordParts) ≥ 9 and (item 9 of recordParts) ≠ "" then
-                    set noteRecord to noteRecord & {fullNoteId:(item 9 of recordParts)}
-                end if
-                set end of recordList to noteRecord
-            end if
-        end if
-    end repeat
-    
-    log "Parsed " & (count of recordList) & " existing note records from JSON data"
-    return recordList
-end parseLoadedData
-
--- Helper to split by delimiter
 on splitByDelimiter(textString, delimiter)
+    if textString is "" then return {}
     set AppleScript's text item delimiters to delimiter
     set textItems to text items of textString
     set AppleScript's text item delimiters to ""
     return textItems
 end splitByDelimiter
 
--- Update note data record with comprehensive metadata
-on updateNoteData(existingData, noteID, noteModDate, noteCreatedDate, fileName, fullNoteID)
-    set currentTime to (current date as string)
-    set foundExisting to false
-    set newData to {}
+-- ── Tracking data (through tracker_io.py) ────────────────────────────────
 
-    -- Go through existing data and update if found
-    if (count of existingData) > 0 then
-        repeat with i from 1 to count of existingData
-            set currentRecord to item i of existingData
-            if (noteID_key of currentRecord) = noteID then
-                -- Update existing record, preserve firstExported
-                set newRecord to {noteID_key:noteID, filename:fileName, created:(noteCreatedDate as string), modified:(noteModDate as string), firstExported:(firstExported of currentRecord), lastExported:currentTime, exportCount:((exportCount of currentRecord) + 1), fullNoteId:fullNoteID}
-                set foundExisting to true
-            else
-                -- Keep existing record unchanged
-                set newRecord to currentRecord
-            end if
-            set end of newData to newRecord
-        end repeat
-    end if
-
-    -- If not found, add new record
-    if not foundExisting then
-        set newRecord to {noteID_key:noteID, filename:fileName, created:(noteCreatedDate as string), modified:(noteModDate as string), firstExported:currentTime, lastExported:currentTime, exportCount:1, fullNoteId:fullNoteID}
-        set end of newData to newRecord
-    end if
-
-    return newData
-end updateNoteData
-
--- Check if a note should be processed based on modification date (optimized string conversion)
-on shouldProcessNote(existingData, noteID, noteModDate)
-    -- Convert to string once for comparison
-    set noteModDateStr to (noteModDate as string)
-
-    repeat with currentRecord in existingData
-        if (noteID_key of currentRecord) = noteID then
-            set storedModDate to (modified of currentRecord)
-            if storedModDate = noteModDateStr then
-                return false -- unchanged
-            else
-                return true -- changed
-            end if
-        end if
-    end repeat
-    return true -- new note (not found in existing data)
-end shouldProcessNote
-
--- Mark notes as deleted if they no longer exist in the current export
-on markDeletedNotes(existingData, currentNoteIDs)
-    set currentTime to (current date as string)
-    set newData to {}
-    
-    repeat with currentRecord in existingData
-        set recordNoteID to (noteID_key of currentRecord)
-        
-        if currentNoteIDs contains recordNoteID then
-            -- Note still exists, keep record unchanged
-            set end of newData to currentRecord
-        else
-            -- Note was deleted, mark it
-            set alreadyDeleted to false
-            try
-                set testDeleted to (deletedDate of currentRecord)
-                set alreadyDeleted to true
-            on error
-                -- deletedDate doesn't exist, so not already marked as deleted
-                set alreadyDeleted to false
-            end try
-            
-            if not alreadyDeleted then
-                set deletedRecord to {noteID_key:(noteID_key of currentRecord), filename:(filename of currentRecord), created:(created of currentRecord), modified:(modified of currentRecord), firstExported:(firstExported of currentRecord), lastExported:(lastExported of currentRecord), exportCount:(exportCount of currentRecord), deletedDate:currentTime}
-                -- Preserve fullNoteId if present
-                try
-                    set deletedRecord to deletedRecord & {fullNoteId:(fullNoteId of currentRecord)}
-                end try
-                set end of newData to deletedRecord
-            else
-                -- Already marked as deleted, keep as is
-                set end of newData to currentRecord
-            end if
-        end if
-    end repeat
-    
-    return newData
-end markDeletedNotes
-
-on saveNotebookData(filePath, dataRecord)
+-- Returns {ids, filenames, isoKeys, legacyKeys}
+on loadNotebookData(trackerIO, filePath, includeDeleted)
+    set ids to {}
+    set filenames to {}
+    set isoKeys to {}
+    set legacyKeys to {}
     try
-        log "Saving notebook data to: " & filePath & " with " & (count of dataRecord) & " records"
-        
-        -- Don't overwrite existing file if we have no data to save
-        if (count of dataRecord) = 0 then
-            log "Warning: No data to save, checking if file already exists..."
-            set checkFileCommand to "if [ -f " & quoted form of filePath & " ]; then echo 'exists'; else echo 'missing'; fi"
-            set fileExists to do shell script checkFileCommand
-            if fileExists contains "exists" then
-                log "Existing file found, preserving it instead of overwriting with empty data"
-                return
-            else
-                log "No existing file, will create new empty file"
+        set flag to "0"
+        if includeDeleted then set flag to "1"
+        set output to do shell script trackerIO & " load " & quoted form of filePath & " " & flag
+        repeat with aLine in paragraphs of output
+            set aLine to aLine as text
+            if aLine is not "" then
+                set parts to my splitByDelimiter(aLine, tab)
+                if (count of parts) ≥ 4 then
+                    set end of ids to item 1 of parts
+                    set end of filenames to my tsvUnescape(item 2 of parts)
+                    set end of isoKeys to item 3 of parts
+                    set end of legacyKeys to my tsvUnescape(item 4 of parts)
+                end if
             end if
-        end if
-        
-        set saveCommand to "python3 -c \"
-import json
-import os
-
-# Load existing data if it exists
-existing_data = {}
-if os.path.exists('" & filePath & "'):
-    try:
-        with open('" & filePath & "', 'r') as f:
-            existing_data = json.load(f)
-        print('Loaded existing data with', len(existing_data), 'records')
-    except Exception as e:
-        print('Error loading existing data:', e)
-        existing_data = {}
-
-# Process new records
-records = [" & my convertDataToString(dataRecord) & "]
-new_data = {}
-
-print('Processing', len(records), 'new records')
-
-for record in records:
-    if len(record) >= 7:
-        note_id = record[0]
-        
-        # Start with existing data for this note (preserves unknown fields)
-        if note_id in existing_data:
-            note_data = existing_data[note_id].copy()
-        else:
-            note_data = {}
-        
-        # Update with AppleScript-managed fields
-        note_data.update({
-            'filename': record[1],
-            'created': record[2],
-            'modified': record[3],
-            'firstExported': record[4],
-            'lastExported': record[5],
-            'exportCount': int(record[6])
-        })
-
-        # Handle deleted date
-        if len(record) >= 8 and record[7]:
-            note_data['deletedDate'] = record[7]
-
-        # Handle fullNoteId
-        if len(record) >= 9 and record[8]:
-            note_data['fullNoteId'] = record[8]
-
-        new_data[note_id] = note_data
-
-# Also preserve any notes that exist in file but not in current export
-# (in case some notes are temporarily not found)
-for note_id, note_data in existing_data.items():
-    if note_id not in new_data:
-        new_data[note_id] = note_data
-
-print('Final data will have', len(new_data), 'records')
-
-# Save the merged data
-with open('" & filePath & "', 'w') as f:
-    json.dump(new_data, f, indent=2, sort_keys=True)
-    
-print('Successfully saved data to file')
-\""
-        do shell script saveCommand
-        log "Notebook data saved successfully"
+        end repeat
     on error errMsg
-        log "Error saving notebook data: " & errMsg
+        log "Error loading tracking data " & filePath & ": " & errMsg
+    end try
+    return {ids, filenames, isoKeys, legacyKeys}
+end loadNotebookData
+
+on tsvUnescape(t)
+    if t does not contain "\\" then return t
+    set t to my replaceText("\\\\", (character id 1), t)
+    set t to my replaceText("\\t", tab, t)
+    set t to my replaceText("\\n", linefeed, t)
+    set t to my replaceText("\\r", return, t)
+    return my replaceText((character id 1), "\\", t)
+end tsvUnescape
+
+-- Write the rows to a temp file natively, then merge them with tracker_io.py.
+-- Returns "" on success or the error message.
+on saveNotebookData(trackerIO, filePath, rowsText, dataDirectory)
+    set tmpPath to dataDirectory & ".save_rows.tsv"
+    try
+        if not my writeToFile(tmpPath, rowsText) then error "could not write " & tmpPath
+        do shell script trackerIO & " save " & quoted form of filePath & " " & quoted form of tmpPath
+        do shell script "rm -f " & quoted form of tmpPath
+        return ""
+    on error errMsg
+        return errMsg
     end try
 end saveNotebookData
 
--- Convert data record to string for Python
-on convertDataToString(dataRecord)
-    set recordString to ""
-    repeat with i from 1 to count of dataRecord
-        set currentRecord to item i of dataRecord
-        set recordArray to "['" & (noteID_key of currentRecord) & "','" & (filename of currentRecord) & "','" & (created of currentRecord) & "','" & (modified of currentRecord) & "','" & (firstExported of currentRecord) & "','" & (lastExported of currentRecord) & "'," & (exportCount of currentRecord)
-        -- Add deletedDate field
-        try
-            set recordArray to recordArray & ",'" & (deletedDate of currentRecord) & "'"
-        on error
-            set recordArray to recordArray & ",''"
-        end try
-        -- Add fullNoteId field
-        try
-            set recordArray to recordArray & ",'" & (fullNoteId of currentRecord) & "']"
-        on error
-            set recordArray to recordArray & ",'']"
-        end try
-        set recordString to recordString & recordArray
-        if i < count of dataRecord then set recordString to recordString & ","
-    end repeat
-    return recordString
-end convertDataToString
+-- ── Renames: remove the previous files of a note in every format ─────────
 
--- Handle filename changes - delete old files including attachments from all format directories
-on handleFilenameChange(existingData, noteID, oldFileName, newFileName, folderRawPath, folderTextPath)
-    if oldFileName ≠ newFileName and oldFileName ≠ "" then
-        log "Filename changed for note " & noteID & ": " & oldFileName & " → " & newFileName
-        
-        -- Build old file paths for main files
-        set oldRawPath to POSIX path of (folderRawPath & oldFileName & ".html")
-        set oldTextPath to POSIX path of (folderTextPath & oldFileName & ".txt")
-        
-        -- Build paths for processed HTML (in html directory)
-        set htmlDirectory to my replaceText("/raw/", "/html/", folderRawPath)
-        set oldHTMLPath to POSIX path of (htmlDirectory & oldFileName & ".html")
-        
-        -- Build paths for converted formats (in their respective directories)
-        set rootDir to my replaceText("/raw/" & my getSubdirFromPath(folderRawPath), "/", folderRawPath)
-        if rootDir ends with "/" then set rootDir to text 1 through -2 of rootDir
-        
-        set oldMarkdownPath to rootDir & "/md/" & my getSubdirFromPath(folderRawPath) & oldFileName & ".md"
-        set oldPDFPath to rootDir & "/pdf/" & my getSubdirFromPath(folderRawPath) & oldFileName & ".pdf"
-        set oldWordPath to rootDir & "/docx/" & my getSubdirFromPath(folderRawPath) & oldFileName & ".docx"
-        
-        -- Delete main files (safe to delete completely)
-        my deleteOldFilesSafely({oldMarkdownPath, oldPDFPath, oldWordPath, oldHTMLPath, oldTextPath, oldRawPath}, oldFileName)
-        
-        -- Delete attachment files from ALL format directories
-        my deleteAttachmentsFromAllFormats(rootDir, my getSubdirFromPath(folderRawPath), oldFileName)
-    end if
+on handleFilenameChange(rootDir, subdirPrefix, oldFileName, newFileName)
+    if oldFileName is "" or oldFileName is newFileName then return
+    log "Filename changed: " & oldFileName & " -> " & newFileName
+    set oldPaths to {}
+    repeat with spec in {{"raw", ".html"}, {"html", ".html"}, {"text", ".txt"}, {"md", ".md"}, {"pdf", ".pdf"}, {"docx", ".docx"}}
+        set end of oldPaths to rootDir & (item 1 of spec) & "/" & subdirPrefix & oldFileName & (item 2 of spec)
+    end repeat
+    my deleteOldFilesSafely(oldPaths, oldFileName)
+    my deleteAttachmentsFromAllFormats(rootDir, subdirPrefix, oldFileName)
 end handleFilenameChange
 
--- Delete attachment files from all format directories (html, md, pdf, docx)
-on deleteAttachmentsFromAllFormats(rootDir, subdir, oldFileName)
-    -- List of format directories that might contain attachments
-    set formatDirs to {"html", "md", "pdf", "docx"}
-    
-    repeat with formatDir in formatDirs
-        try
-            -- Build the attachments path for this format
-            set attachmentsPath to rootDir & "/" & formatDir & "/" & subdir & "attachments"
-            
-            -- Check if this attachments directory exists
-            set checkCommand to "if [ -d " & quoted form of attachmentsPath & " ]; then echo 'exists'; else echo 'not found'; fi"
-            set dirExists to do shell script checkCommand
-            
-            if dirExists contains "exists" then
-                -- Count files before deletion (for logging)
-                set countCommand to "find " & quoted form of attachmentsPath & " -name " & quoted form of (oldFileName & "-attachment-*") & " -type f 2>/dev/null | wc -l"
-                set fileCount to do shell script countCommand
-                
-                if (fileCount as number) > 0 then
-                    -- Delete only files that start with the old filename
-                    set deleteCommand to "find " & quoted form of attachmentsPath & " -name " & quoted form of (oldFileName & "-attachment-*") & " -type f -delete"
-                    do shell script deleteCommand
-                    
-                    log "Deleted " & fileCount & " attachment files from " & formatDir & " for: " & oldFileName
-                else
-                    log "No attachment files found in " & formatDir & " for: " & oldFileName
-                end if
-            end if
-            
-        on error errMsg
-            -- Only log if it's not a "file not found" type error
-            if errMsg does not contain "No such file" and errMsg does not contain "not found" then
-                log "Error deleting attachments from " & formatDir & " for " & oldFileName & ": " & errMsg
-            end if
-        end try
+on deleteAttachmentsFromAllFormats(rootDir, subdirPrefix, oldFileName)
+    repeat with formatDir in {"html", "md", "pdf", "docx"}
+        set folderPath to rootDir & formatDir & "/" & subdirPrefix
+        repeat with attachmentDir in {folderPath & "attachments", folderPath}
+            try
+                do shell script "if [ -d " & quoted form of (attachmentDir as text) & " ]; then find " & quoted form of (attachmentDir as text) & " -maxdepth 1 -type f -name " & quoted form of (oldFileName & "-attachment-*") & " -delete; fi"
+            on error errMsg
+                log "Error deleting attachments for " & oldFileName & ": " & errMsg
+            end try
+        end repeat
     end repeat
 end deleteAttachmentsFromAllFormats
 
--- Safely delete old files with error handling
 on deleteOldFilesSafely(filePaths, oldFileName)
     repeat with filePath in filePaths
         try
-            -- Check if file/directory exists before trying to delete
-            do shell script "if [ -e " & quoted form of filePath & " ]; then rm -rf " & quoted form of filePath & "; echo 'Deleted: " & filePath & "'; fi"
+            do shell script "rm -f " & quoted form of (filePath as text)
         on error errMsg
-            -- Only log if it's not a "file not found" type error
-            if errMsg does not contain "No such file" then
-                log "Could not delete old file " & filePath & ": " & errMsg
-            end if
+            log "Could not delete old file " & filePath & ": " & errMsg
         end try
     end repeat
-    log "Cleaned up old files for: " & oldFileName
 end deleteOldFilesSafely
-
--- Helper to extract subdirectory from path
-on getSubdirFromPath(folderPath)
-    if folderPath contains "/raw/" then
-        set pathParts to my splitByDelimiter(folderPath, "/")
-        -- Find the part after "raw"
-        repeat with i from 1 to count of pathParts
-            if item i of pathParts is "raw" and i < count of pathParts then
-                return (item (i + 1) of pathParts) & "/"
-            end if
-        end repeat
-    end if
-    return ""
-end getSubdirFromPath

@@ -537,35 +537,28 @@ fi
 if [[ "${NOTES_EXPORT_EXTRACT_DATA}" == "true" ]]; then
     echo "Extracting note data..."
     
-    # Run AppleScript (simple, like the working version)
-    osascript "$SCRIPT_DIR/export_notes.scpt" "$NOTES_EXPORT_ROOT_DIR" "$NOTES_EXPORT_NOTE_LIMIT" "$NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER" "$NOTES_EXPORT_NOTE_PICK_PROBABILITY" "$NOTES_EXPORT_FILENAME_FORMAT" "$NOTES_EXPORT_SUBDIR_FORMAT" "$NOTES_EXPORT_USE_SUBDIRS" "$NOTES_EXPORT_UPDATE_ALL" "$NOTES_EXPORT_INCLUDE_DELETED" "$NOTES_EXPORT_FILTER_ACCOUNTS" "$NOTES_EXPORT_FILTER_FOLDERS" "$NOTES_EXPORT_MODIFIED_AFTER"
-    
-    # Read statistics from temporary file
+    PYTHON_BIN="$(command -v python3)"
+    osascript "$SCRIPT_DIR/export_notes.scpt" "$NOTES_EXPORT_ROOT_DIR" "$NOTES_EXPORT_NOTE_LIMIT" "$NOTES_EXPORT_NOTE_LIMIT_PER_FOLDER" "$NOTES_EXPORT_NOTE_PICK_PROBABILITY" "$NOTES_EXPORT_FILENAME_FORMAT" "$NOTES_EXPORT_SUBDIR_FORMAT" "$NOTES_EXPORT_USE_SUBDIRS" "$NOTES_EXPORT_UPDATE_ALL" "$NOTES_EXPORT_INCLUDE_DELETED" "$NOTES_EXPORT_FILTER_ACCOUNTS" "$NOTES_EXPORT_FILTER_FOLDERS" "$NOTES_EXPORT_MODIFIED_AFTER" "$PYTHON_BIN" "$SCRIPT_DIR" "$NOTES_EXPORT_EXCLUDE_FOLDERS"
+
+    # Record deletions and moves, refresh folder metadata (#37)
+    python3 "$SCRIPT_DIR/tracker_io.py" finalize "${NOTES_EXPORT_ROOT_DIR}/data" "${NOTES_EXPORT_ROOT_DIR}/data/.live_notes.tsv"
+
+    # Read statistics (key=value lines) written by the AppleScript
     STATS_FILE="${NOTES_EXPORT_ROOT_DIR}/data/export_stats.tmp"
-    echo "DEBUG: Looking for stats file at: $STATS_FILE"
-    
+    STATS_CAPTURED=false
     if [[ -f "$STATS_FILE" ]]; then
-        echo "DEBUG: Stats file found, reading contents..."
-        STATS_CONTENT=$(cat "$STATS_FILE" | tr -d '\0\r' | head -1)  # Clean up any null bytes or carriage returns
-        echo "DEBUG: Raw stats content: '$STATS_CONTENT'"
-        
-        # Validate the content looks like numbers separated by colons (now with 6 fields including elapsed time)
-        if [[ "$STATS_CONTENT" =~ ^[0-9]+:[0-9]+:[0-9]+:[0-9]+:[0-9]+:[0-9.]+$ ]]; then
-            echo "DEBUG: Stats content matches expected format"
-            # Parse statistics (format: total:processed:unchanged:older:folders:elapsed_seconds)
-            IFS=':' read -r TOTAL_NOTES PROCESSED_NOTES UNCHANGED_NOTES OLDER_NOTES FOLDERS_COUNT APPLESCRIPT_ELAPSED <<< "$STATS_CONTENT"
-            echo "DEBUG: Parsed - Total:$TOTAL_NOTES, Processed:$PROCESSED_NOTES, Unchanged:$UNCHANGED_NOTES, Older:$OLDER_NOTES, Folders:$FOLDERS_COUNT, AppleScript Time:${APPLESCRIPT_ELAPSED}s"
-            STATS_CAPTURED=true
-        else
-            echo "Warning: Statistics file contains invalid data: '$STATS_CONTENT'"
-            STATS_CAPTURED=false
-        fi
-        
-        # Clean up temp file
+        while IFS='=' read -r key value; do
+            case "$key" in
+                total) TOTAL_NOTES="$value" ;;
+                processed) PROCESSED_NOTES="$value" ;;
+                unchanged) UNCHANGED_NOTES="$value" ;;
+                filtered) OLDER_NOTES="$value" ;;
+                folders) FOLDERS_COUNT="$value" ;;
+                elapsed) APPLESCRIPT_ELAPSED="$value" ;;
+            esac
+        done < "$STATS_FILE"
+        [[ -n "$TOTAL_NOTES" ]] && STATS_CAPTURED=true
         rm -f "$STATS_FILE"
-    else
-        echo "DEBUG: Stats file not found"
-        STATS_CAPTURED=false
     fi
 fi
 

@@ -28,7 +28,7 @@ def compile_script(dest_dir: Path) -> Path:
     return out
 
 
-def call_handler(compiled: Path, expression: str, *args: str) -> str:
+def call_handler(compiled: Path, expression: str, *args: str, setup=()) -> str:
     """Evaluate ``expression`` with the loaded script bound to ``s``.
 
     ``args`` are available as ``item N of argv`` so test strings never pass
@@ -36,14 +36,25 @@ def call_handler(compiled: Path, expression: str, *args: str) -> str:
     """
     lines = [
         "on run argv",
+        # Arguments arrive prefixed with "=" (osascript reads a leading "-" as an option)
+        "set fixedArgs to {}",
+        "repeat with a in argv",
+        "if length of (a as text) > 1 then",
+        "set end of fixedArgs to text 2 thru -1 of (a as text)",
+        "else",
+        'set end of fixedArgs to ""',
+        "end if",
+        "end repeat",
+        "set argv to fixedArgs",
         f'set s to load script (POSIX file "{compiled}")',
+        *setup,
         f"return {expression}",
         "end run",
     ]
     cmd = ["osascript"]
     for line in lines:
         cmd += ["-e", line]
-    cmd += list(args)
+    cmd += ["=" + a for a in args]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip())
