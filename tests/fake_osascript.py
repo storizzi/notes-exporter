@@ -40,6 +40,17 @@ def fill(fmt, **tokens):
     return fmt
 
 
+def names_for(key, subdir_fmt, use_subdirs):
+    """(subdir, tracker, prefix), as folderOutputNames in export_notes.scpt."""
+    account, path, _ = key
+    safe_path = "/".join(sanitize(p) for p in path)
+    if use_subdirs:
+        subdir = fill(subdir_fmt, account=sanitize(account), folder=sanitize(path[-1]),
+                      folderpath=safe_path, path=safe_path, accountid="S", shortaccountid="S")
+        return subdir, subdir.replace("%", "%25").replace("/", "%2F"), subdir + "/"
+    return "", f"{sanitize(account)}-{sanitize(path[-1])}", ""
+
+
 def main(argv):
     # argv: script root limit limitPerFolder prob filenameFmt subdirFmt useSubdirs updateAll
     #       includeDeleted accounts folders modifiedAfter python scriptDir exclude
@@ -68,19 +79,16 @@ def main(argv):
             and not (k[1][-1] in exclude or "/".join(k[1]) in exclude)]
     print(f"@@PLAN\t{len(plan)}", file=sys.stderr)
 
-    live_lines, stats = [], dict(total=0, processed=0, unchanged=0, filtered=0, locked=0, errors=0)
+    live_lines = []
+    for key in folders:
+        if key not in plan:  # left out: its tracker was not read in full
+            live_lines.append("X\t" + tio.escape(names_for(key, subdir_fmt, use_subdirs)[1]))
+    stats = dict(total=0, processed=0, unchanged=0, filtered=0, locked=0, errors=0)
     for index, key in enumerate(plan, 1):
         account, path, folder_id = key
         folder_id = f"x-coredata://S/ICFolder/{folder_id}"
         account_id = "x-coredata://S/ICAccount/p1"
-        safe_path = "/".join(sanitize(p) for p in path)
-        if use_subdirs:
-            subdir = fill(subdir_fmt, account=sanitize(account), folder=sanitize(path[-1]),
-                          folderpath=safe_path, path=safe_path, accountid="S", shortaccountid="S")
-            tracker = subdir.replace("%", "%25").replace("/", "%2F")
-            prefix = subdir + "/"
-        else:
-            subdir, tracker, prefix = "", f"{sanitize(account)}-{sanitize(path[-1])}", ""
+        subdir, tracker, prefix = names_for(key, subdir_fmt, use_subdirs)
         json_path = data_dir / f"{tracker}.json"
         existing = {tio.split_line(l)[0]: tio.split_line(l) for l in tio.load_lines(json_path, False)}
         notes = folders[key]

@@ -111,8 +111,13 @@ on run argv
     set startTime to (current date)
 
     set livePath to dataDirectory & ".live_notes.tsv"
-    set liveFD to open for access (POSIX file livePath) with write permission
-    set eof of liveFD to 0
+    try
+        set liveFD to open for access (POSIX file livePath) with write permission
+        set eof of liveFD to 0
+    on error errMsg number errNum
+        my writeToFile(dataDirectory & "export_stats.tmp", "total=0" & linefeed & "processed=0" & linefeed & "errors=0" & linefeed & "fatal_number=" & errNum & linefeed)
+        error "could not write " & livePath & ": " & errMsg number errNum
+    end try
 
     set fatalMessage to ""
     set fatalNumber to 0
@@ -171,6 +176,9 @@ on run argv
                             set end of plan to {jAccountIndex:ai, jFolderIndex:fi, jRawAccount:rawAccountName, jAccount:accountName, jAccountFullID:accountFullID, jAccountID:accountID, jShortAccountID:shortAccountID, jFolderID:(item fi of folderIDs), jRawFolder:rawFolderName, jFolder:folderName, jRawPath:rawPath, jSafePath:safePathText}
                         else
                             log "Skipping folder: " & rawPathText & " (filtered)"
+                            -- Tell finalize that this tracker was not read in full
+                            set skippedNames to my folderOutputNames(useSubdirs, envSubdirFormat, accountName, folderName, accountID, shortAccountID, safePathText)
+                            write ("X" & tab & my tsvEscape(item 2 of skippedNames) & linefeed) to liveFD starting at eof as «class utf8»
                         end if
                     end repeat
                 end if
@@ -187,15 +195,10 @@ on run argv
                 set accountName to jAccount of job
                 set folderName to jFolder of job
 
-                if useSubdirs then
-                    set subdirName to my generateFilename(envSubdirFormat, "", "", accountName, folderName, jAccountID of job, jShortAccountID of job, jSafePath of job)
-                    set trackerName to my trackerNameFor(subdirName)
-                    set subdirPrefix to subdirName & "/"
-                else
-                    set subdirName to ""
-                    set trackerName to accountName & "-" & folderName
-                    set subdirPrefix to ""
-                end if
+                set outputNames to my folderOutputNames(useSubdirs, envSubdirFormat, accountName, folderName, jAccountID of job, jShortAccountID of job, jSafePath of job)
+                set subdirName to item 1 of outputNames
+                set trackerName to item 2 of outputNames
+                set subdirPrefix to item 3 of outputNames
                 set folderHTMLPath to htmlDirectory & subdirPrefix
                 set folderTextPath to textDirectory & subdirPrefix
                 set folderRawPath to rawDirectory & subdirPrefix
@@ -211,23 +214,43 @@ on run argv
                 set exISOKeys to item 3 of existing
                 set exLegacyKeys to item 4 of existing
 
-                -- Batch fetch: a handful of Apple Events per folder
+                -- The planned folder, checked by id: folders added or removed
+                -- since planning shift the positions
                 tell application "Notes"
                     set aFolder to folder fi of account ai
-                    set allFullIDs to id of every note of aFolder
-                    set allModDates to modification date of every note of aFolder
-                    set allCreated to creation date of every note of aFolder
-                    set allNames to name of every note of aFolder
+                    set folderMatches to ((id of aFolder) is (jFolderID of job))
                 end tell
-                set noteCount to count of allFullIDs
-                set allLocked to {}
-                try
-                    tell application "Notes" to set allLocked to password protected of every note of aFolder
-                end try
-                set allShared to {}
-                try
-                    tell application "Notes" to set allShared to shared of every note of aFolder
-                end try
+                if not folderMatches then
+                    tell application "Notes" to set aFolder to folder id (jFolderID of job)
+                end if
+
+                -- Batch fetch: a handful of Apple Events per folder. Each list
+                -- is a separate request, so they are checked against each
+                -- other and fetched again if the folder changed in between.
+                set fetchAttempt to 0
+                repeat
+                    set fetchAttempt to fetchAttempt + 1
+                    tell application "Notes"
+                        set allFullIDs to id of every note of aFolder
+                        set allModDates to modification date of every note of aFolder
+                        set allCreated to creation date of every note of aFolder
+                        set allNames to name of every note of aFolder
+                    end tell
+                    set allLocked to {}
+                    try
+                        tell application "Notes" to set allLocked to password protected of every note of aFolder
+                    end try
+                    set allShared to {}
+                    try
+                        tell application "Notes" to set allShared to shared of every note of aFolder
+                    end try
+                    tell application "Notes" to set checkIDs to id of every note of aFolder
+                    set noteCount to count of allFullIDs
+                    if my listsAgree(allFullIDs, checkIDs, {allModDates, allCreated, allNames}, {allLocked, allShared}) then exit repeat
+                    if fetchAttempt ≥ 3 then error "the notes of folder " & (my joinList(jRawPath of job, "/")) & " kept changing while they were read" number -2700
+                    log "Folder " & (my joinList(jRawPath of job, "/")) & " changed while it was read; reading it again"
+                    delay 1
+                end repeat
 
                 set folderPathField to my tsvEscape(my joinList(jRawPath of job, character id 31))
                 log "@@FOLDER" & tab & planIndex & tab & planCount & tab & my tsvEscape(jRawAccount of job) & tab & my tsvEscape(my joinList(jRawPath of job, "/")) & tab & noteCount
@@ -304,7 +327,7 @@ on run argv
                             if not my writeToFile(POSIX path of (folderTextPath & noteName & ".txt"), textContent) then error "could not write the text file"
                             my handleFilenameChange(envRootDir, subdirPrefix, oldFileName, noteName)
 
-                            set changedText to changedText & noteID & tab & fullID & tab & noteName & tab & my tsvEscape(rawTitle) & tab & createdISO & tab & modISO & tab & (noteCreatedDate as string) & tab & (noteModDate as string) & tab & my tsvEscape(jRawAccount of job) & tab & (jAccountFullID of job) & tab & (jFolderID of job) & tab & folderPathField & tab & my tsvEscape(subdirName) & linefeed
+                            set changedText to changedText & noteID & tab & fullID & tab & my tsvEscape(noteName) & tab & my tsvEscape(rawTitle) & tab & createdISO & tab & modISO & tab & (noteCreatedDate as string) & tab & (noteModDate as string) & tab & my tsvEscape(jRawAccount of job) & tab & (jAccountFullID of job) & tab & (jFolderID of job) & tab & folderPathField & tab & my tsvEscape(subdirName) & linefeed
 
                             set folderNoteCount to folderNoteCount + 1
                             set totalNotesOutput to totalNotesOutput + 1
@@ -354,8 +377,38 @@ on run argv
     log "Errors: " & totalNotesErrors
     log "Processing Time: " & elapsedSeconds & " seconds"
 
-    if fatalMessage is not "" then error fatalMessage number fatalNumber
+    if fatalMessage is not "" or fatalNumber is not 0 then error fatalMessage number fatalNumber
 end run
+
+-- {subdir, tracker name, subdir prefix} for a folder's output
+on folderOutputNames(useSubdirs, subdirFormat, accountName, folderName, accountID, shortAccountID, safePath)
+    if useSubdirs then
+        set subdirName to my generateFilename(subdirFormat, "", "", accountName, folderName, accountID, shortAccountID, safePath)
+        return {subdirName, my trackerNameFor(subdirName), subdirName & "/"}
+    end if
+    return {"", accountName & "-" & folderName, ""}
+end folderOutputNames
+
+-- True when the batch-fetched lists describe the same notes: the ids match a
+-- second fetch, every property list has one item per note, and optional ones
+-- (empty when Notes lacks the property) too.
+on listsAgree(ids, checkIDs, requiredLists, optionalLists)
+    set n to count of ids
+    if (count of checkIDs) is not n then return false
+    repeat with k from 1 to n
+        if (item k of ids) is not (item k of checkIDs) then return false
+    end repeat
+    repeat with k from 1 to count of requiredLists
+        set aList to item k of requiredLists
+        if (length of aList) is not n then return false
+    end repeat
+    repeat with k from 1 to count of optionalLists
+        set aList to item k of optionalLists
+        set c to length of aList
+        if c is not 0 and c is not n then return false
+    end repeat
+    return true
+end listsAgree
 
 -- ── Folder hierarchy ──────────────────────────────────────────────────────
 
@@ -494,15 +547,17 @@ end makeValidFilename
 -- Fill a filename / subdirectory template. Longer tokens are replaced first
 -- (&accountid used to be eaten by &account, &folderpath by &folder).
 on generateFilename(format, title, noteID, account, folder, accountID, shortAccountID, folderPath)
+    -- Longest tokens first. Tokens become markers before any value goes in,
+    -- so a value such as the title "Q&Ideas" is never read as a token.
+    set tokens to {"&shortaccountid", "&accountid", "&account", "&folderpath", "&path", "&folder", "&title", "&id"}
+    set values to {shortAccountID, accountID, account, folderPath, folderPath, folder, title, noteID}
     set s to format
-    set s to my replaceText("&shortaccountid", shortAccountID, s)
-    set s to my replaceText("&accountid", accountID, s)
-    set s to my replaceText("&account", account, s)
-    set s to my replaceText("&folderpath", folderPath, s)
-    set s to my replaceText("&path", folderPath, s)
-    set s to my replaceText("&folder", folder, s)
-    set s to my replaceText("&title", title, s)
-    set s to my replaceText("&id", noteID, s)
+    repeat with k from 1 to count of tokens
+        set s to my replaceText(item k of tokens, (character id 57344) & k & (character id 57345), s)
+    end repeat
+    repeat with k from 1 to count of tokens
+        set s to my replaceText((character id 57344) & k & (character id 57345), item k of values, s)
+    end repeat
     return s
 end generateFilename
 
@@ -574,8 +629,10 @@ on loadNotebookData(trackerIO, filePath, includeDeleted)
                 end if
             end if
         end repeat
-    on error errMsg
-        log "Error loading tracking data " & filePath & ": " & errMsg
+    on error errMsg number errNum
+        -- Without the old records, renamed notes would leave their old files
+        -- behind; stop instead (no deletions are recorded from a stopped run)
+        error "could not read tracking data " & filePath & ": " & errMsg number errNum
     end try
     return {ids, filenames, isoKeys, legacyKeys}
 end loadNotebookData

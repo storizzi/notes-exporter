@@ -205,6 +205,22 @@ class TestFinalize:
         tio.finalize(data, live)
         assert "deletedDate" not in self.records(data, "iCloud-Dup")["7"]
 
+    def test_record_without_folder_id_kept_when_a_same_named_folder_was_left_out(self, tmp_path):
+        """Work/Archive was read, Home/Archive excluded; both map to iCloud-Archive."""
+        data = tmp_path / "data"
+        self.write_tracker(data, "iCloud-Archive", {"8": {"filename": "legacy-8"}})
+        live = tmp_path / "live.tsv"
+        live.write_text("\n".join(["X\tiCloud-Archive",
+                                   live_folder("iCloud-Archive", "x-coredata://S/ICFolder/pWORK"),
+                                   "END"]) + "\n")
+        tio.finalize(data, live)
+        assert "deletedDate" not in self.records(data, "iCloud-Archive")["8"]
+        # without the X line the same record is recorded deleted
+        live.write_text("\n".join([live_folder("iCloud-Archive", "x-coredata://S/ICFolder/pWORK"),
+                                   "END"]) + "\n")
+        tio.finalize(data, live)
+        assert "deletedDate" in self.records(data, "iCloud-Archive")["8"]
+
     def test_moved_note(self, tmp_path):
         data = tmp_path / "data"
         self.write_tracker(data, "iCloud-A", {"9": {"filename": "n-9", "fullNoteId": "x-coredata://S/ICNote/p9"}})

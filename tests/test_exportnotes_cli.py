@@ -155,6 +155,19 @@ def test_rename_move_and_delete(env):
     assert not (root / "md/iCloud-Food/Soup.md").exists()
 
 
+def test_note_moved_to_recently_deleted_is_deleted_when_that_folder_is_excluded(env):
+    write_library(env, [_note(1, "Scones"), _note(2, "Bread")])
+    args = ("--exclude-folders", "Recently Deleted")
+    assert run(env, *args).returncode == 0
+    write_library(env, [_note(1, "Scones"),
+                        _note(2, "Bread", folder=("Recently Deleted",))])
+    assert run(env, *args).returncode == 0
+    m = manifest(env)
+    assert [n["short_id"] for n in m["notes"]] == ["1"]
+    assert [d["short_id"] for d in m["deleted"]] == ["2"]
+    assert not (env["root"] / "raw/iCloud-Recently-Deleted").exists()
+
+
 # ── partial, failed, refused, locked ─────────────────────────────────────
 
 def test_locked_and_failing_notes_make_a_partial_run(env):

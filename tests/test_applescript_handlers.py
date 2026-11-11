@@ -59,6 +59,26 @@ def test_generate_filename_token_order(compiled):
     assert out == "iCloud|STORE-UUID|UUID|Recipes|Food/Recipes|Food/Recipes|T-42"
 
 
+def test_generate_filename_does_not_rescan_values(compiled):
+    """A title containing "&Id" or a folder named "&title" stays as it is."""
+    out = call_handler(
+        compiled,
+        's\'s generateFilename(item 1 of argv, "Q&Ideas", "42", "iCloud", "&title", "S", "U", "&id")',
+        "&folder/&title-&id/&folderpath")
+    assert out == "&title/Q&Ideas-42/&id"
+
+
+@pytest.mark.parametrize("expr,expected", [
+    ('{"a", "b"}, {"a", "b"}, {{1, 2}, {3, 4}}, {{}, {true, false}}', "true"),
+    ('{"a", "b"}, {"b", "a"}, {{1, 2}}, {}', "false"),          # re-sorted in between
+    ('{"a", "b"}, {"a", "b", "c"}, {{1, 2}}, {}', "false"),     # a note was added
+    ('{"a", "b"}, {"a", "b"}, {{1}}, {}', "false"),             # a property list is short
+    ('{"a", "b"}, {"a", "b"}, {{1, 2}}, {{true}}', "false"),    # an optional one too
+])
+def test_lists_agree(compiled, expr, expected):
+    assert call_handler(compiled, f"s's listsAgree({expr})") == expected
+
+
 def test_tracker_name_encodes_slashes(compiled):
     assert call_handler(compiled, "s's trackerNameFor(item 1 of argv)",
                         "iCloud/Food/50%") == "iCloud%2FFood%2F50%25"

@@ -248,18 +248,22 @@ class LiveIndex:
         self.notes: Dict[Tuple[str, str], dict] = {}
         self.errors: List[dict] = []
         self.complete = False
+        # Trackers that also hold a folder this run left out (a filter, an
+        # exclusion): a record there without a folderId may be in that folder
+        self.partial_trackers: set = set()
 
 
 def read_live(path: Path) -> LiveIndex:
-    folders, notes, complete, errors = _parse_live(path)
+    folders, notes, complete, errors, partial = _parse_live(path)
     index = LiveIndex()
     index.folders, index.notes, index.complete, index.errors = folders, notes, complete, errors
+    index.partial_trackers = partial
     return index
 
 
 def parse_live(path: Path) -> Tuple[Dict[str, dict], Dict[Tuple[str, str], dict], bool]:
     """Return (folders by tracker, live notes by (tracker, noteId), complete)."""
-    folders, notes, complete, _ = _parse_live(path)
+    folders, notes, complete, _, _ = _parse_live(path)
     return folders, notes, complete
 
 
@@ -267,9 +271,10 @@ def _parse_live(path: Path):
     folders: Dict[str, dict] = {}
     notes: Dict[Tuple[str, str], dict] = {}
     errors: List[dict] = []
+    partial: set = set()
     complete = False
     if not path.exists():
-        return folders, notes, complete, errors
+        return folders, notes, complete, errors, partial
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             if not line.strip():
@@ -286,13 +291,16 @@ def _parse_live(path: Path):
                 rest += [""] * 4
                 errors.append({"tracker": rest[0], "noteId": rest[1],
                                "fullNoteId": rest[2], "message": rest[3]})
+            elif kind == "X" and rest:
+                partial.add(rest[0])
             elif kind == "END":
                 complete = True
-    return folders, notes, complete, errors
+    return folders, notes, complete, errors, partial
 
 
 def finalize(data_dir: Path, live_path: Path) -> dict:
-    folders, live, complete = parse_live(live_path)
+    index = read_live(live_path)
+    folders, live, complete = index.folders, index.notes, index.complete
     live_by_full: Dict[str, str] = {}
     for (tracker, _), row in live.items():
         if row.get("fullNoteId"):
@@ -331,8 +339,8 @@ def finalize(data_dir: Path, live_path: Path) -> dict:
                     rec["movedTo"] = moved_to
                     summary["moved"] += 1
                 elif (complete and enumerated is not None
-                      and (not rec.get("folderId")
-                           or rec["folderId"] in enumerated["folderIds"])):
+                      and (rec["folderId"] in enumerated["folderIds"] if rec.get("folderId")
+                           else tracker not in index.partial_trackers)):
                     rec["deletedDate"] = stamp
                     rec["deletedAt"] = stamp
                     summary["deleted"] += 1
