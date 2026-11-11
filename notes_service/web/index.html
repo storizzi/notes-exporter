@@ -72,6 +72,8 @@
     <section id="tab-settings" class="panel" hidden>
       <form id="settings-form" class="card">
         <label>Export folder <input name="export_root" required></label>
+        <div class="row"><button type="button" id="open-folder" class="tab">Show in Finder</button>
+          <span id="open-folder-msg" class="muted"></span></div>
         <fieldset id="formats"><legend>Formats</legend></fieldset>
         <fieldset><legend>EPUB books per folder</legend>
           <label>Books <select name="epub_books"><option value="none">none</option><option value="folder">one per folder</option></select></label>

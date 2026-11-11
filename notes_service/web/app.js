@@ -205,6 +205,15 @@ async function loadSettings() {
   f.interval_minutes.value = s.schedule.interval_minutes || '';
 }
 
+async function openExportFolder() {
+  const msg = $('#open-folder-msg'); msg.textContent = '';
+  try {
+    const r = await api('POST', '/admin/export-folder/open');
+    msg.textContent = r.on_this_mac ? `Opened ${r.opened} in the Finder.`
+      : `Opened ${r.opened} in the Finder on the Mac running the service.`;
+  } catch (e) { msg.textContent = e.message; }
+}
+
 async function saveSettings(ev) {
   ev.preventDefault();
   const f = ev.target; $('#settings-error').textContent = ''; $('#settings-ok').textContent = '';
@@ -308,6 +317,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#run-cancel').addEventListener('click', cancelRun);
   $('#ask-permission').addEventListener('click', askPermission);
   $('#settings-form').addEventListener('submit', saveSettings);
+  $('#open-folder').addEventListener('click', openExportFolder);
   $('#user-form').addEventListener('submit', addUser);
   $('#key-form').addEventListener('submit', addKey);
   $('#copy-key').addEventListener('click', copyKey);

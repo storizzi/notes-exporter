@@ -21,6 +21,7 @@ from notes_service.permissions import PermissionChecker  # noqa: E402
 FAKE_EXPORTER = HERE / "fake_exporter.py"
 FAKE_PERMISSION = HERE / "fake_permission.py"
 FAKE_SECURITY = HERE / "fake_security.py"
+FAKE_OPEN = HERE / "fake_open.py"
 PASSWORD = "correct horse battery"
 
 
@@ -36,6 +37,8 @@ def isolated_env(tmp_path, monkeypatch):
     # Safety: whatever a test builds from the environment asks fakes, never Apple Events or the Keychain.
     monkeypatch.setenv("NOTES_SERVICE_PERMISSION_HELPER", str(FAKE_PERMISSION))
     monkeypatch.setenv("NOTES_SERVICE_SECURITY_BIN", str(FAKE_SECURITY))
+    monkeypatch.setenv("NOTES_SERVICE_OPEN_BIN", str(FAKE_OPEN))
+    monkeypatch.setenv("FAKE_OPEN_LOG", str(tmp_path / "open.log"))
     monkeypatch.setenv("NOTES_SERVICE_PYTHON", sys.executable)
     monkeypatch.setenv("FAKE_SECURITY_STORE", str(tmp_path / "keychain.json"))
     monkeypatch.setenv("FAKE_SECURITY_LOG", str(tmp_path / "security.log"))
@@ -50,7 +53,8 @@ def make_config(tmp_path):
                         exporter_path=f"{Path(sys.executable).parent}:/usr/bin:/bin",
                         pass_env=["FAKE_EXPORTER_MODE", "FAKE_EXPORTER_SECONDS", "FAKE_EXPORTER_ARGS_FILE"],
                         progress_write_seconds=0.0, login_max_attempts=3, bcrypt_rounds=4,
-                        permission_helper=FAKE_PERMISSION, security_bin=str(FAKE_SECURITY))
+                        permission_helper=FAKE_PERMISSION, security_bin=str(FAKE_SECURITY),
+                        open_bin=str(FAKE_OPEN))
         defaults.update(kw)
         return Config(**defaults)
     return make

@@ -1,6 +1,7 @@
 """The HTTP API (SERVICE-API.md) and the web UI."""
 
 import os
+import subprocess
 import platform
 import sys
 from contextlib import asynccontextmanager
@@ -400,6 +401,23 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
             return ctx.settings.update(changes).model_dump()
         except SettingsError as e:
             raise HTTPException(422, str(e))
+
+    @app.post("/api/admin/export-folder/open")
+    def open_export_folder(request: Request, p: Principal = Depends(need("admin"))):
+        """Show the (saved) export folder in the Finder — on the Mac running the service,
+        whoever asks; the answer says so when the asker is elsewhere."""
+        root = os.path.realpath(os.path.expanduser(ctx.settings.load().export_root))
+        if not os.path.isdir(root):
+            raise HTTPException(404, f"the export folder {root} doesn't exist yet (it is made by the first export)")
+        try:
+            r = subprocess.run([ctx.config.open_bin, root], capture_output=True,  # root is absolute: never an option
+                               text=True, timeout=30,
+                               stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            raise HTTPException(500, f"couldn't run {ctx.config.open_bin}: {e.__class__.__name__}")
+        if r.returncode != 0:
+            raise HTTPException(500, f"the Finder couldn't open {root}: {(r.stderr or '').strip() or r.returncode}")
+        return {"opened": root, "on_this_mac": _is_loopback(request)}
 
     @app.get("/api/admin/permission")
     def get_permission(refresh: bool = False, p: Principal = Depends(need("admin"))):

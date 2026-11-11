@@ -205,6 +205,7 @@ program runs and with which environment can only be set here, never over HTTP.
 | `NOTES_SERVICE_PERMISSION_REQUEST_TIMEOUT_SECONDS` | `180` | how long a permission request waits for someone to click Allow |
 | `NOTES_SERVICE_PERMISSION_LAUNCH_WAIT_SECONDS` | `20` | how long a request waits for Notes to start |
 | `NOTES_SERVICE_SECURITY_BIN` | `/usr/bin/security` | the Keychain tool (tests use a fake) |
+| `NOTES_SERVICE_OPEN_BIN` | `/usr/bin/open` | what Settings → Show in Finder runs (tests use a fake) |
 | `NOTES_SERVICE_KEYCHAIN` | (the login keychain) | the keychain a generated password goes into; by default `security login-keychain`'s answer, never the default keychain, which can be the System keychain (only root writes there — `security` then fails with -61) |
 | `NOTES_SERVICE_KEYCHAIN_SERVICE` | `notes-exporter` | the Keychain item's service name |
 | `NOTES_SERVICE_GENERATED_PASSWORD_BYTES` | `24` | random bytes in a generated password (32 characters) |
@@ -432,6 +433,11 @@ Notes" dialog on the Mac and waits for the answer (up to
 `NOTES_SERVICE_PERMISSION_REQUEST_TIMEOUT_SECONDS`), then checks again and
 answers `{automation, full_disk_access, checked_at}`; 409 while another request
 is waiting. Only call it when someone is at the Mac.
+
+Export folder: `POST /api/admin/export-folder/open` shows the saved export
+folder in the Finder (Settings → Show in Finder) — always on the Mac running the
+service, so the answer `{opened, on_this_mac}` says when the caller is
+elsewhere; 404 while the folder doesn't exist yet.
 
 API keys: `GET /api/admin/api-keys` → `{api_keys:[{id, name, prefix, scopes,
 owner_user_id, created_at, last_used_at, expires_at}]}`; `POST {name, scopes,

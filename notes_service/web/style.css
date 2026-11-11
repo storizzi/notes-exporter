@@ -31,6 +31,7 @@ button.link { background: none; border: none; color: var(--accent); padding: 0; 
 button.danger { background: none; color: var(--err); border-color: var(--err); }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .error { color: var(--err); min-height: 1em; }
+.muted { color: var(--muted); }
 .ok { color: var(--ok); }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 10px; }
 dt { color: var(--muted); }

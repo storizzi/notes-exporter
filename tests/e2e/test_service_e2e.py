@@ -85,6 +85,7 @@ def server(tmp_path):
                # Safety: a permission check or Keychain call reaches the fakes, never macOS.
                "NOTES_SERVICE_PERMISSION_HELPER": str(FAKE_PERMISSION),
                "NOTES_SERVICE_SECURITY_BIN": str(FAKE_SECURITY),
+               "NOTES_SERVICE_OPEN_BIN": "/usr/bin/true",
                "FAKE_SECURITY_STORE": str(tmp_path / "keychain.json"),
                "FAKE_SECURITY_LOG": str(tmp_path / "security.log")}
         env.update(extra_env or {})
