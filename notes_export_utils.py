@@ -3,6 +3,14 @@ import os
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
+def _tracker_stem(json_file) -> str:
+    """'data/iCloud-Notes.json' -> 'iCloud-Notes'; a bare tracker name is returned as is."""
+    name = str(json_file)
+    if name.endswith(".json"):
+        return Path(name).stem
+    return name
+
+
 class NotesExportTracker:
     """Utility class for tracking notes export status across different conversion formats"""
     
@@ -62,6 +70,28 @@ class NotesExportTracker:
             return []
         return list(data_path.glob("*.json"))
     
+    @staticmethod
+    def subdir_for(json_file, note_info: Optional[Dict[str, Any]] = None) -> str:
+        """Output subdirectory (relative, '/'-separated) for a tracker's notes.
+
+        Records written since 1.4.0 carry ``subdir`` (it can be nested, e.g.
+        ``iCloud/Food/Recipes`` with ``--subdir-format '&account/&folderpath'``).
+        Older records fall back to the tracker's file name, which was the
+        subdirectory name in every earlier layout.
+        """
+        if note_info and isinstance(note_info.get("subdir"), str):
+            return note_info["subdir"]
+        return _tracker_stem(json_file)
+
+    def tracker_subdir(self, json_file, notebook_data: Optional[Dict[str, Any]] = None) -> str:
+        """Subdirectory of a whole tracker (from any record that records it)."""
+        if notebook_data is None:
+            notebook_data = self.load_notebook_data(json_file)
+        for info in notebook_data.values():
+            if isinstance(info, dict) and isinstance(info.get("subdir"), str):
+                return info["subdir"]
+        return _tracker_stem(json_file)
+
     def load_notebook_data(self, json_file_path: str) -> Dict[str, Any]:
         """Load notebook data from JSON file"""
         try:
@@ -71,10 +101,10 @@ class NotesExportTracker:
             return {}
     
     def save_notebook_data(self, json_file_path: str, data: Dict[str, Any]):
-        """Save notebook data to JSON file"""
+        """Save notebook data to JSON file (atomically)"""
         try:
-            with open(json_file_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, sort_keys=True)
+            from tracker_io import write_json_atomic
+            write_json_atomic(Path(json_file_path), data)
         except Exception as e:
             print(f"Error saving notebook data to {json_file_path}: {e}")
     
@@ -89,12 +119,12 @@ class NotesExportTracker:
         
         for json_file in self.get_all_data_files():
             notebook_data = self.load_notebook_data(json_file)
-            folder_name = json_file.stem
-            
+
             for note_id, note_info in notebook_data.items():
                 # Skip deleted notes
                 if 'deletedDate' in note_info:
                     continue
+                folder_name = self.subdir_for(json_file, note_info)
                 
                 # Check if export is needed
                 last_exported = note_info.get('lastExported', '')
@@ -108,6 +138,7 @@ class NotesExportTracker:
                         notes_to_process.append({
                             'note_id': note_id,
                             'notebook': folder_name,
+                            'tracker': json_file.stem,
                             'filename': filename,
                             'source_file': source_path,
                             'json_file': json_file,
@@ -236,7 +267,7 @@ class NotesExportTracker:
 
         for json_file in self.get_all_data_files():
             notebook_data = self.load_notebook_data(json_file)
-            folder_name = json_file.stem
+            folder_name = self.tracker_subdir(json_file, notebook_data)
 
             known_filenames = {info.get("filename", "") for info in notebook_data.values()}
 

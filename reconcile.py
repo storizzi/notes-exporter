@@ -76,8 +76,8 @@ def count_tracking_json(tracker) -> dict:
     """Count notes in tracking JSON files. Returns {notebook: {total, active, deleted}}."""
     counts = {}
     for json_file in tracker.get_all_data_files():
-        notebook = json_file.stem
         data = tracker.load_notebook_data(json_file)
+        notebook = tracker.tracker_subdir(json_file, data)
         active = sum(1 for info in data.values() if 'deletedDate' not in info)
         deleted = sum(1 for info in data.values() if 'deletedDate' in info)
         has_full_id = sum(1 for info in data.values()
@@ -113,12 +113,16 @@ def count_disk_files(tracker) -> dict:
             continue
 
         if uses_subdirs:
-            for subdir in sorted(fmt_dir.iterdir()):
-                if subdir.is_dir():
-                    file_count = len(list(subdir.glob(f"*{ext}")))
-                    if file_count > 0:
-                        counts[subdir.name][fmt_name] = file_count
-                        totals[fmt_name] += file_count
+            # Subdirectories may be nested (&folderpath); key by relative path
+            per_dir = defaultdict(int)
+            for f in fmt_dir.rglob(f"*{ext}"):
+                rel_parent = f.parent.relative_to(fmt_dir)
+                if rel_parent.parts and "attachments" not in rel_parent.parts \
+                        and not f.name.endswith(".conflict.md"):
+                    per_dir[rel_parent.as_posix()] += 1
+            for name, file_count in sorted(per_dir.items()):
+                counts[name][fmt_name] = file_count
+                totals[fmt_name] += file_count
         else:
             file_count = len(list(fmt_dir.glob(f"*{ext}")))
             counts["(flat)"][fmt_name] = file_count
@@ -176,9 +180,9 @@ def get_tracked_notes(tracker) -> dict:
     """Get all tracked notes keyed by notebook. Returns {notebook: {note_id: info}}."""
     result = {}
     for json_file in tracker.get_all_data_files():
-        notebook = json_file.stem
         data = tracker.load_notebook_data(json_file)
-        result[notebook] = data
+        notebook = tracker.tracker_subdir(json_file, data)
+        result.setdefault(notebook, {}).update(data)
     return result
 
 
@@ -197,10 +201,10 @@ def get_disk_filenames(tracker) -> dict:
         if not fmt_dir.exists():
             continue
         if uses_subdirs:
-            for subdir in fmt_dir.iterdir():
-                if subdir.is_dir():
-                    for f in subdir.glob(f"*{ext}"):
-                        result[subdir.name][fmt_name].add(f.stem)
+            for f in fmt_dir.rglob(f"*{ext}"):
+                rel_parent = f.parent.relative_to(fmt_dir)
+                if rel_parent.parts and "attachments" not in rel_parent.parts:
+                    result[rel_parent.as_posix()][fmt_name].add(f.stem)
         else:
             for f in fmt_dir.glob(f"*{ext}"):
                 result["(flat)"][fmt_name].add(f.stem)

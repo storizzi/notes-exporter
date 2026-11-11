@@ -299,7 +299,7 @@ class QdrantNotesManager:
 
         for folder, ext in [("md", ".md"), ("text", ".txt"), ("html", ".html")]:
             if uses_subdirs:
-                path = root / folder / notebook / f"{filename}{ext}"
+                path = root / folder / self.tracker.subdir_for(notebook, note_info) / f"{filename}{ext}"
             else:
                 path = root / folder / f"{filename}{ext}"
             if path.exists():

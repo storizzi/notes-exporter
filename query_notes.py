@@ -177,11 +177,14 @@ def note_has_images(file_path: Path, tracker) -> bool:
 
     # For HTML files, also check for embedded base64 images in raw source
     if file_path.suffix == '.html':
-        raw_dir = Path(tracker.root_directory) / 'raw'
-        if tracker._uses_subdirs():
-            raw_file = raw_dir / file_path.parent.name / file_path.name
-        else:
-            raw_file = raw_dir / file_path.name
+        root = Path(tracker.root_directory)
+        raw_file = root / 'raw' / file_path.name
+        try:
+            # Same relative path under raw/ (works for nested subdirectories)
+            rel = file_path.resolve().relative_to(root.resolve())
+            raw_file = root / 'raw' / Path(*rel.parts[1:])
+        except ValueError:
+            pass
         if raw_file.exists():
             try:
                 with open(raw_file, 'r', encoding='utf-8') as f:
@@ -194,6 +197,17 @@ def note_has_images(file_path: Path, tracker) -> bool:
     return False
 
 
+def _iso_or_apple(iso_value, legacy_value):
+    """Prefer the ISO 8601 date recorded since 1.4.0, else parse the locale string."""
+    if iso_value:
+        try:
+            dt = datetime.fromisoformat(iso_value)
+            return dt.astimezone().replace(tzinfo=None) if dt.tzinfo else dt
+        except ValueError:
+            pass
+    return parse_apple_date(legacy_value)
+
+
 def get_note_dates(file_path: Path, tracker, _cache={}) -> dict:
     """Look up created/modified dates for a note from tracking JSON.
 
@@ -203,13 +217,13 @@ def get_note_dates(file_path: Path, tracker, _cache={}) -> dict:
     if not _cache:
         for json_file in tracker.get_all_data_files():
             data = tracker.load_notebook_data(json_file)
-            folder_name = json_file.stem
             for note_id, info in data.items():
                 fn = info.get('filename', '')
                 if fn:
+                    folder_name = tracker.subdir_for(json_file, info).split('/')[-1]
                     _cache[(folder_name, fn)] = {
-                        'created': parse_apple_date(info.get('created', '')),
-                        'modified': parse_apple_date(info.get('modified', '')),
+                        'created': _iso_or_apple(info.get('createdAt'), info.get('created', '')),
+                        'modified': _iso_or_apple(info.get('modifiedAt'), info.get('modified', '')),
                     }
 
     stem = file_path.stem

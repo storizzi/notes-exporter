@@ -43,6 +43,19 @@ def parse_apple_date(date_string):
     return None
 
 
+def parse_iso_or_apple(iso_value, legacy_value):
+    """Prefer the ISO 8601 date recorded since 1.4.0 (locale independent)."""
+    if iso_value:
+        try:
+            dt = datetime.fromisoformat(iso_value)
+            if dt.tzinfo is not None:
+                dt = dt.astimezone().replace(tzinfo=None)
+            return dt
+        except ValueError:
+            pass
+    return parse_apple_date(legacy_value) if legacy_value else None
+
+
 def set_file_dates(file_path, creation_date, modification_date):
     """
     Set both creation and modification dates on a file.
@@ -97,17 +110,12 @@ def process_notebook_data(data_file, root_dir, use_subdirs, subdir_name=None):
         if 'deletedDate' in note_data:
             continue
 
-        created_date = parse_apple_date(created_str)
-        modified_date = parse_apple_date(modified_str)
+        created_date = parse_iso_or_apple(note_data.get('createdAt'), created_str)
+        modified_date = parse_iso_or_apple(note_data.get('modifiedAt'), modified_str)
+        note_subdir = note_data.get('subdir') if isinstance(note_data.get('subdir'), str) else subdir_name
 
         if not created_date or not modified_date:
             continue
-
-        # Build file paths for all possible export formats
-        if use_subdirs and subdir_name:
-            base = root_dir / '{format_dir}' / subdir_name
-        else:
-            base = root_dir / '{format_dir}'
 
         file_specs = [
             ('html', f"{filename}.html"),
@@ -119,8 +127,8 @@ def process_notebook_data(data_file, root_dir, use_subdirs, subdir_name=None):
         ]
 
         for format_dir, file_name in file_specs:
-            if use_subdirs and subdir_name:
-                file_path = root_dir / format_dir / subdir_name / file_name
+            if use_subdirs and note_subdir:
+                file_path = root_dir / format_dir / note_subdir / file_name
             else:
                 file_path = root_dir / format_dir / file_name
 

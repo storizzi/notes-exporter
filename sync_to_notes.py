@@ -158,7 +158,7 @@ def find_new_local_files(tracker: NotesExportTracker) -> List[Dict[str, Any]]:
 
     for json_file in tracker.get_all_data_files():
         notebook_data = tracker.load_notebook_data(json_file)
-        folder_name = json_file.stem
+        folder_name = tracker.tracker_subdir(json_file, notebook_data)
 
         # Get all known filenames for this notebook
         known_filenames = set()
@@ -180,16 +180,22 @@ def find_new_local_files(tracker: NotesExportTracker) -> List[Dict[str, Any]]:
             if md_file.suffix == ".md" and not md_file.name.endswith(".conflict.md"):
                 stem = md_file.stem
                 if stem not in known_filenames:
-                    # Determine account and folder from the notebook name
-                    # Format is typically "account-folder"
-                    parts = folder_name.split("-", 1)
-                    account = parts[0] if len(parts) > 0 else "iCloud"
-                    folder = parts[1] if len(parts) > 1 else "Notes"
+                    # Account and folder: from any record of this tracker
+                    # (1.4.0+), else from the "account-folder" name
+                    sample = next((i for i in notebook_data.values()
+                                   if i.get("account") and i.get("folderPath")), None)
+                    if sample:
+                        account = sample["account"]
+                        folder = sample["folderPath"][-1]
+                    else:
+                        parts = json_file.stem.split("-", 1)
+                        account = parts[0] if len(parts) > 0 else "iCloud"
+                        folder = parts[1] if len(parts) > 1 else "Notes"
 
                     new_files.append({
                         "md_file": md_file,
                         "filename": stem,
-                        "notebook": folder_name,
+                                "notebook": json_file.stem,
                         "json_file": json_file,
                         "account": account,
                         "folder": folder,
@@ -258,7 +264,7 @@ class SyncEngine:
             return None
         md_root = Path(self.tracker.root_directory) / "md"
         if self.tracker._uses_subdirs():
-            return md_root / folder_name / f"{filename}.md"
+            return md_root / self.tracker.subdir_for(folder_name, note_info) / f"{filename}.md"
         return md_root / f"{filename}.md"
 
     def _process_note(self, note_id: str, note_info: Dict,
