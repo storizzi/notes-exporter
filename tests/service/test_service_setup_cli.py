@@ -157,11 +157,26 @@ def test_generated_password_in_keychain(tmp_path, monkeypatch, capsys):
     assert 'password for simon stored in your login Keychain as "notes-exporter" (open the Passwords app to see it)' in out
     assert "added simon (admin)" in out
     calls = security_calls(tmp_path)
-    assert calls[0]["argv"] == ["-i"]
-    assert calls[0]["stdin"] == (f'add-generic-password -U -a "simon" -s "notes-exporter" '
-                                 f'-l "notes-exporter (simon)" -w "{password}"\n')
+    # the login keychain, asked for first — never the default one, which can be the System
+    # keychain (only root writes there: -61, a write permissions error)
+    assert calls[0]["argv"] == ["login-keychain"]
+    assert calls[1]["argv"] == ["-i"]
+    assert calls[1]["stdin"] == (f'add-generic-password -U -a "simon" -s "notes-exporter" '
+                                 f'-l "notes-exporter (simon)" -w "{password}" '
+                                 f'"/fake/Library/Keychains/login.keychain-db"\n')
+    assert calls[2]["argv"][-1] == "/fake/Library/Keychains/login.keychain-db"
     assert all(password not in " ".join(c["argv"]) for c in calls)
     assert store().verify_password("simon", password)
+
+
+def test_a_named_keychain_is_used_as_given(tmp_path, monkeypatch):
+    monkeypatch.setenv("NOTES_SERVICE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("NOTES_SERVICE_BCRYPT_ROUNDS", "4")
+    monkeypatch.setenv("NOTES_SERVICE_KEYCHAIN", str(tmp_path / "other.keychain-db"))
+    assert main(["user", "add", "simon", "--admin", "--generate-password", "--keychain"]) == 0
+    calls = security_calls(tmp_path)
+    assert [c["argv"][0] for c in calls] == ["-i", "find-generic-password"]
+    assert calls[0]["stdin"].rstrip("\n").endswith(f'"{tmp_path / "other.keychain-db"}"')
 
 
 def test_passwd_regenerates_into_keychain(state, tmp_path, capsys):

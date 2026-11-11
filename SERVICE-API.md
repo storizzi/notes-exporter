@@ -205,6 +205,7 @@ program runs and with which environment can only be set here, never over HTTP.
 | `NOTES_SERVICE_PERMISSION_REQUEST_TIMEOUT_SECONDS` | `180` | how long a permission request waits for someone to click Allow |
 | `NOTES_SERVICE_PERMISSION_LAUNCH_WAIT_SECONDS` | `20` | how long a request waits for Notes to start |
 | `NOTES_SERVICE_SECURITY_BIN` | `/usr/bin/security` | the Keychain tool (tests use a fake) |
+| `NOTES_SERVICE_KEYCHAIN` | (the login keychain) | the keychain a generated password goes into; by default `security login-keychain`'s answer, never the default keychain, which can be the System keychain (only root writes there — `security` then fails with -61) |
 | `NOTES_SERVICE_KEYCHAIN_SERVICE` | `notes-exporter` | the Keychain item's service name |
 | `NOTES_SERVICE_GENERATED_PASSWORD_BYTES` | `24` | random bytes in a generated password (32 characters) |
 | `NOTES_SERVICE_CLI_SESSION_MINUTES` | `10` | the `permission` command's own short session |

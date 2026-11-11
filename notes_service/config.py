@@ -55,6 +55,7 @@ class Config:
     permission_request_timeout_seconds: float = 180.0
     permission_launch_wait_seconds: float = 20.0
     security_bin: str = "/usr/bin/security"
+    keychain: str = ""
     keychain_service: str = "notes-exporter"
     generated_password_bytes: int = 24
     cli_session_minutes: float = 10.0
@@ -93,6 +94,7 @@ class Config:
             permission_request_timeout_seconds=float(_env("NOTES_SERVICE_PERMISSION_REQUEST_TIMEOUT_SECONDS", "180")),
             permission_launch_wait_seconds=float(_env("NOTES_SERVICE_PERMISSION_LAUNCH_WAIT_SECONDS", "20")),
             security_bin=_env("NOTES_SERVICE_SECURITY_BIN", "/usr/bin/security"),
+            keychain=_env("NOTES_SERVICE_KEYCHAIN", ""),
             keychain_service=_env("NOTES_SERVICE_KEYCHAIN_SERVICE", "notes-exporter"),
             generated_password_bytes=int(_env("NOTES_SERVICE_GENERATED_PASSWORD_BYTES", "24")),
             cli_session_minutes=float(_env("NOTES_SERVICE_CLI_SESSION_MINUTES", "10")),

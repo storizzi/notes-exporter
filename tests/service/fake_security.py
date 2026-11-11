@@ -34,6 +34,9 @@ def main():
     if os.environ.get("FAKE_SECURITY_FAIL"):
         print("security: SecKeychainItemCreateFromContent: User interaction is not allowed.", file=sys.stderr)
         return 1
+    if argv[:1] == ["login-keychain"]:
+        print('    "/fake/Library/Keychains/login.keychain-db"')
+        return 0
     path = os.environ["FAKE_SECURITY_STORE"]
     store = json.load(open(path)) if os.path.exists(path) else {}
     if argv[:1] == ["-i"]:
