@@ -1,6 +1,6 @@
 # Apple Notes Export Tool <!-- omit from toc -->
 
-**Version 1.5.0** (unreleased)
+**Version 1.5.0** (released 11 November 2026)
 
 <figure style="float: right; margin-left: 10px;">
     <img src="notes-exporter.jpg" alt="Notes Exporter" width="200">
