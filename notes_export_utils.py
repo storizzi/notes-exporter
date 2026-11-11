@@ -3,6 +3,8 @@ import os
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
+from tracker_io import tracker_files
+
 def _tracker_stem(json_file) -> str:
     """'data/iCloud-Notes.json' -> 'iCloud-Notes'; a bare tracker name is returned as is."""
     name = str(json_file)
@@ -51,7 +53,7 @@ class NotesExportTracker:
                 # Check if it looks like a notes export (has data directory with JSON files)
                 data_dir = os.path.join(location, 'data')
                 if os.path.exists(data_dir):
-                    json_files = list(Path(data_dir).glob("*.json"))
+                    json_files = tracker_files(data_dir)
                     if json_files:
                         print(f"Auto-detected notes export directory: {location}")
                         return location
@@ -68,7 +70,7 @@ class NotesExportTracker:
         if not data_path.exists():
             print(f"Warning: Data directory does not exist: {self.data_directory}")
             return []
-        return list(data_path.glob("*.json"))
+        return tracker_files(data_path)
     
     @staticmethod
     def subdir_for(json_file, note_info: Optional[Dict[str, Any]] = None) -> str:
@@ -159,15 +161,18 @@ class NotesExportTracker:
         """Check if the export uses subdirectories"""
         return os.getenv('NOTES_EXPORT_USE_SUBDIRS', 'true').lower() == 'true'
     
-    def mark_note_exported(self, json_file_path: str, note_id: str, export_type: str):
-        """Mark a note as exported to the specified format"""
+    def mark_note_exported(self, json_file_path: str, note_id: str, export_type: str,
+                           extra: Optional[Dict[str, Any]] = None):
+        """Mark a note as exported to the specified format (plus optional extra fields)"""
         notebook_data = self.load_notebook_data(json_file_path)
-        
+
         if note_id in notebook_data:
             last_exported_key = f'lastExportedTo{export_type.capitalize()}'
             last_exported = notebook_data[note_id].get('lastExported', '')
             notebook_data[note_id][last_exported_key] = last_exported
-            
+            if extra:
+                notebook_data[note_id].update(extra)
+
             self.save_notebook_data(json_file_path, notebook_data)
     
     def get_output_path(self, export_type: str, folder_name: str, filename: str, extension: str) -> Path:
@@ -291,6 +296,42 @@ class NotesExportTracker:
         return new_files
 
 
+def file_sha256(path) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def get_tracker() -> NotesExportTracker:
     """Convenience function to get a tracker instance"""
     return NotesExportTracker()
+
+def run_for_notes(stage: str, notes: List[Dict[str, Any]], handle) -> int:
+    """Run ``handle(note)`` for each note with progress events and error counting.
+
+    ``handle`` returns True (done), False (failed) or None (skipped). Exceptions
+    count as failures. Returns the process exit code: 0, or 1 if any failed.
+    """
+    import events
+    total = len(notes)
+    failures = 0
+    events.progress(stage, 0, total, force=True, unit="notes")
+    for i, note in enumerate(notes, 1):
+        try:
+            ok = handle(note)
+        except Exception as e:  # keep going; report at the end
+            print(f"Error in {stage} for {note.get('filename')}: {e}")
+            ok = False
+        if ok is False:
+            failures += 1
+            events.emit("note_error", stage=stage, note_id=note.get("note_id"),
+                        filename=note.get("filename"))
+        events.progress(stage, i, total, unit="notes", failed=failures)
+    if total:
+        events.progress(stage, total, total, force=True, unit="notes", failed=failures)
+    if failures:
+        print(f"{stage}: {failures} of {total} notes failed")
+    return 1 if failures else 0

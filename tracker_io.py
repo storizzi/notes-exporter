@@ -146,6 +146,18 @@ def write_json_atomic(path: Path, data) -> None:
         raise
 
 
+def tracker_files(data_dir) -> List[Path]:
+    """The tracking files in data/: every *.json except hidden ones.
+
+    data/ also holds the exporter's own hidden files (.run_info.json,
+    .manifest_cache.json ...), which are not trackers.
+    """
+    data_dir = Path(data_dir)
+    if not data_dir.is_dir():
+        return []
+    return sorted(p for p in data_dir.glob("*.json") if not p.name.startswith("."))
+
+
 # ── load ──────────────────────────────────────────────────────────────────
 
 def load_lines(json_path: Path, include_deleted: bool) -> List[str]:
@@ -290,7 +302,7 @@ def finalize(data_dir: Path, live_path: Path) -> dict:
     summary = {"trackers": 0, "updated": 0, "deleted": 0, "moved": 0,
                "restored": 0, "complete": complete}
 
-    for json_file in sorted(data_dir.glob("*.json")):
+    for json_file in tracker_files(data_dir):
         tracker = json_file.stem
         data = read_json(json_file)
         if not data:

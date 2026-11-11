@@ -106,5 +106,5 @@ class TestWrapHtml:
         assert "</html>" in result
 
     def test_title_escaping(self):
-        result = _wrap_html("<p>Hi</p>", "Note & Title")
-        assert "Note & Title" in result
+        result = _wrap_html("<p>Hi</p>", "Note & <Title>")
+        assert "<title>Note &amp; &lt;Title&gt;</title>" in result

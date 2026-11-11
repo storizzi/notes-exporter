@@ -33,6 +33,8 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from tracker_io import tracker_files
+
 SEP = "\t"
 EXTENSIONS = {"md": ".md", "html": ".html", "raw": ".html", "text": ".txt",
               "pdf": ".pdf", "docx": ".docx"}
@@ -113,7 +115,7 @@ def plan_copies(root: Path, fmt: str, dest: Path,
     """Return (copies [(src, dst, [attachment srcs])], unmapped [(tracker, name)])."""
     ext = EXTENSIONS[fmt]
     copies, unmapped, seen = [], [], set()
-    for json_path in sorted((root / "data").glob("*.json")):
+    for json_path in tracker_files(root / "data"):
         try:
             records = json.loads(json_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):

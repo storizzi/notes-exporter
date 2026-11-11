@@ -15,6 +15,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from tracker_io import tracker_files
+
 
 def parse_apple_date(date_string):
     """
@@ -159,7 +161,7 @@ def main():
 
     total_files_updated = 0
 
-    for json_file in sorted(data_dir.glob('*.json')):
+    for json_file in tracker_files(data_dir):
         if json_file.name == 'export_stats.tmp':
             continue
 
