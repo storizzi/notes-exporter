@@ -240,7 +240,8 @@ class RunManager:
         return a.run_id if a else None
 
     def start(self, *, trigger: str, mode: str = "incremental", folders=None, accounts=None,
-              formats=None, epub_books: Optional[str] = None, requested_by: Optional[str] = None) -> dict:
+              formats=None, epub_books: Optional[str] = None, requested_by: Optional[str] = None,
+              epub_book_order: Optional[str] = None, epub_book_subfolders: Optional[str] = None) -> dict:
         if trigger not in TRIGGERS:
             raise RunError(f"trigger must be one of {list(TRIGGERS)}")
         if mode not in MODES:
@@ -254,6 +255,12 @@ class RunManager:
             if self._active is not None:
                 raise RunBusy(self._active.run_id)
             settings = self.settings.load()
+            # A client's folder-book layout for this run, over the settings' (books are rebuilt
+            # when their order changes, so a client should send the same values every run).
+            overrides = {k: v for k, v in (("epub_book_order", epub_book_order),
+                                           ("epub_book_subfolders", epub_book_subfolders)) if v}
+            if overrides:
+                settings = settings.model_copy(update=overrides)
             produced = produced_formats(settings.formats, formats)
             books = effective_epub_books(settings, epub_books)
             run = self.store.create(trigger=trigger, mode=mode, folders=folders, accounts=accounts,

@@ -305,11 +305,13 @@ A run:
 }
 ```
 
-`POST /api/runs {mode?, folders?, accounts?, formats?, epub_books?, trigger?}` →
+`POST /api/runs {mode?, folders?, accounts?, formats?, epub_books?, epub_book_order?, epub_book_subfolders?, trigger?}` →
 **202** `{run}`. `mode` `incremental` (default) or `full` (re-export every note);
 `folders` / `accounts` limit the run (names or folder paths; no commas, line
 breaks or a leading `-`, else 400); `formats` and `epub_books` see
-[below](#formats-and-epub-books); `trigger` `api` (default), `ui` or `cli`.
+[below](#formats-and-epub-books); `epub_book_order` / `epub_book_subfolders` set
+the folder books' layout for this run only (else the settings'; a book is rebuilt
+when its order changes, so send the same values every run); `trigger` `api` (default), `ui` or `cli`.
 **409** `{detail, running_run_id}` while a run is in progress — one run at a
 time.
 

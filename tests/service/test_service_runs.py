@@ -294,6 +294,19 @@ def test_epub_format_and_books_per_run(service, argsfile):
     assert client.get("/api/status").json()["epub_books"] == "folder"
 
 
+def test_a_run_can_set_the_folder_book_layout(service, argsfile):
+    client, ctx = service
+    run = client.post("/api/runs", json={"epub_books": "folder", "epub_book_order": "created",
+                                         "epub_book_subfolders": "nested"}).json()["run"]
+    wait_done(client, run["id"])
+    argv = calls(argsfile)[0]["argv"]
+    assert argv[argv.index("--epub-book-order") + 1] == "created"
+    assert argv[argv.index("--epub-book-subfolders") + 1] == "nested"
+    # the settings themselves are unchanged
+    assert ctx.settings.load().epub_book_order == "modified"
+    assert client.post("/api/runs", json={"epub_book_order": "size"}).status_code == 422
+
+
 def test_runs_table_migrated(make_config):
     import sqlite3
     config = make_config()
