@@ -6,15 +6,15 @@ import re
 import tempfile
 import threading
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from .config import Config
 
-ALL_FORMATS = ("raw", "text", "html", "md", "pdf", "docx")
+ALL_FORMATS = ("raw", "text", "html", "md", "pdf", "docx", "epub")
 # Formats a run may ask for (raw is always written: it is the source of the others).
-RUN_FORMATS = ("html", "md", "pdf", "docx", "text")
+RUN_FORMATS = ("html", "md", "pdf", "docx", "epub", "text")
 IMAGE_FORMATS = ("jpeg", "png", "heic", "tiff", "webp")
 _HHMM = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
@@ -65,6 +65,9 @@ class Settings(BaseModel):
     image_format: Optional[str] = None
     image_format_from: List[str] = Field(default_factory=list)
     image_quality: Optional[int] = None
+    epub_books: Literal["none", "folder"] = "none"
+    epub_book_order: Literal["modified", "created", "title"] = "modified"
+    epub_book_subfolders: Literal["separate", "nested"] = "separate"
     schedule: Schedule = Field(default_factory=Schedule)
 
     @field_validator("formats")
@@ -180,9 +183,14 @@ class SettingsStore:
 def produced_formats(settings_formats: List[str], requested: Optional[List[str]] = None) -> List[str]:
     """What a run writes: raw and text always, the union of settings and request."""
     wanted = set(settings_formats) | set(requested or []) | {"raw", "text"}
-    if wanted & {"md", "pdf", "docx"}:
+    if wanted & {"md", "pdf", "docx", "epub"}:
         wanted.add("html")  # conversions are made from the HTML with its images
     return [f for f in ALL_FORMATS if f in wanted]
+
+
+def effective_epub_books(settings: "Settings", requested: Optional[str] = None) -> str:
+    """Folder books when the settings or the run ask for them (a union, like formats)."""
+    return "folder" if "folder" in (settings.epub_books, requested) else "none"
 
 
 def _tf(value: bool) -> str:
@@ -191,9 +199,10 @@ def _tf(value: bool) -> str:
 
 def exporter_args(config: Config, settings: Settings, *, json_log: Path, mode: str = "incremental",
                   folders: Optional[List[str]] = None, accounts: Optional[List[str]] = None,
-                  formats: Optional[List[str]] = None) -> List[str]:
+                  formats: Optional[List[str]] = None, epub_books: Optional[str] = None) -> List[str]:
     """The exportnotes.zsh command line for one run (INTEGRATION.md "Recommended invocation")."""
     fmts = set(produced_formats(settings.formats, formats))
+    books = effective_epub_books(settings, epub_books)
     args = [
         str(config.exporter),
         "--root-dir", settings.export_root,
@@ -204,6 +213,10 @@ def exporter_args(config: Config, settings: Settings, *, json_log: Path, mode: s
         "--convert-markdown", _tf("md" in fmts),
         "--convert-pdf", _tf("pdf" in fmts),
         "--convert-word", _tf("docx" in fmts),
+        "--convert-epub", _tf("epub" in fmts),
+        "--epub-books", books,
+        "--epub-book-order", settings.epub_book_order,
+        "--epub-book-subfolders", settings.epub_book_subfolders,
         "--html-wrap", _tf(settings.html_wrap),
         "--prune-deleted", _tf(settings.prune_deleted),
         "--tags", _tf(settings.tags),

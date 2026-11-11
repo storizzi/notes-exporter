@@ -213,6 +213,18 @@ def test_e2e_real_exportnotes_with_fake_osascript(server, tmp_path):
     done2 = wait_run(http, run2["id"], timeout=120)
     assert done2["status"] == "ok" and done2["counts"]["changed"] == 0 and done2["manifest_sequence"] == 2
     assert http.json("GET", "/api/notes?changed_since_sequence=1")["notes"] == []
+    # a client asks for EPUBs and folder books for one run
+    run3 = http.json("POST", "/api/runs", {"formats": ["epub"], "epub_books": "folder", "mode": "full"}, expect=202)["run"]
+    done3 = wait_run(http, run3["id"], timeout=120)
+    assert done3["status"] == "ok", http.call("GET", f"/api/runs/{run3['id']}/log")[2].decode()
+    manifest = http.json("GET", "/api/manifest")
+    epub = next(n for n in manifest["notes"] if n["title"] == "Scones")["outputs"]["epub"]
+    code, h, data = http.call("GET", "/api/files/" + quote(epub["path"]))
+    assert code == 200 and h["content-type"] == "application/epub+zip" and data[30:38] == b"mimetype"
+    assert hashlib.sha256(data).hexdigest() == epub["sha256"]
+    assert {"/".join(b["folder_path"]) for b in manifest["books"]} == {"Food/Baking", "Notes"}
+    book = manifest["books"][0]
+    assert http.call("GET", "/api/files/" + quote(book["path"]))[0] == 200
 
 
 def test_e2e_cancel_and_busy(server, tmp_path):

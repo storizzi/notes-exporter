@@ -69,6 +69,11 @@
       <form id="settings-form" class="card">
         <label>Export folder <input name="export_root" required></label>
         <fieldset id="formats"><legend>Formats</legend></fieldset>
+        <fieldset><legend>EPUB books per folder</legend>
+          <label>Books <select name="epub_books"><option value="none">none</option><option value="folder">one per folder</option></select></label>
+          <label>Chapter order <select name="epub_book_order"><option value="modified">modified, newest first</option><option value="created">created, newest first</option><option value="title">title</option></select></label>
+          <label>Subfolders <select name="epub_book_subfolders"><option value="separate">their own books</option><option value="nested">parts of the top folder's book</option></select></label>
+        </fieldset>
         <label class="check"><input type="checkbox" name="folder_hierarchy"> Nested folders (folder hierarchy)</label>
         <label>Exclude folders (one per line) <textarea name="exclude_folders" rows="2"></textarea></label>
         <label class="check"><input type="checkbox" name="prune_deleted"> Remove files of notes deleted in Notes</label>

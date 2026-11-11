@@ -18,7 +18,8 @@ from typing import Callable, List, Optional
 
 from .config import Config
 from .db import Database
-from .settings import SettingsStore, _clean_names, exporter_args, exporter_env, produced_formats
+from .settings import (SettingsStore, _clean_names, effective_epub_books, exporter_args, exporter_env,
+                       produced_formats)
 
 STATUSES = ("queued", "running", "ok", "partial", "failed", "cancelled")
 FINISHED = ("ok", "partial", "failed", "cancelled")
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS runs (
     folders TEXT NOT NULL DEFAULT '[]',
     accounts TEXT NOT NULL DEFAULT '[]',
     formats TEXT NOT NULL DEFAULT '[]',
+    epub_books TEXT NOT NULL DEFAULT 'none',
     requested_by TEXT,
     created_at TEXT NOT NULL,
     started_at TEXT,
@@ -125,6 +127,14 @@ class RunStore:
         self.config = config
         config.ensure_home()
         self.db = Database(config.runs_db, SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Columns added after a runs.sqlite was first made."""
+        have = {r["name"] for r in self.db.all("PRAGMA table_info(runs)")}
+        for name, ddl in (("epub_books", "TEXT NOT NULL DEFAULT 'none'"),):
+            if name not in have:
+                self.db.run(f"ALTER TABLE runs ADD COLUMN {name} {ddl}")
 
     @staticmethod
     def to_public(row: dict) -> dict:
@@ -139,14 +149,15 @@ class RunStore:
         out.pop("pid", None)
         return out
 
-    def create(self, *, trigger: str, mode: str, folders, accounts, formats, requested_by) -> dict:
+    def create(self, *, trigger: str, mode: str, folders, accounts, formats, requested_by,
+               epub_books: str = "none") -> dict:
         with self.db.connect() as conn:
             seq = (conn.execute("SELECT COALESCE(MAX(seq), 0) + 1 FROM runs").fetchone()[0])
             run_id = uuid.uuid4().hex
-            conn.execute("INSERT INTO runs(id, seq, status, trigger, mode, folders, accounts, formats, requested_by,"
-                         " created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            conn.execute("INSERT INTO runs(id, seq, status, trigger, mode, folders, accounts, formats, epub_books,"
+                         " requested_by, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                          (run_id, seq, "queued", trigger, mode, json.dumps(folders or []),
-                          json.dumps(accounts or []), json.dumps(formats or []), requested_by, now_iso()))
+                          json.dumps(accounts or []), json.dumps(formats or []), epub_books, requested_by, now_iso()))
         return self.get(run_id)
 
     def update(self, run_id: str, **fields) -> None:
@@ -229,7 +240,7 @@ class RunManager:
         return a.run_id if a else None
 
     def start(self, *, trigger: str, mode: str = "incremental", folders=None, accounts=None,
-              formats=None, requested_by: Optional[str] = None) -> dict:
+              formats=None, epub_books: Optional[str] = None, requested_by: Optional[str] = None) -> dict:
         if trigger not in TRIGGERS:
             raise RunError(f"trigger must be one of {list(TRIGGERS)}")
         if mode not in MODES:
@@ -244,12 +255,14 @@ class RunManager:
                 raise RunBusy(self._active.run_id)
             settings = self.settings.load()
             produced = produced_formats(settings.formats, formats)
+            books = effective_epub_books(settings, epub_books)
             run = self.store.create(trigger=trigger, mode=mode, folders=folders, accounts=accounts,
-                                    formats=produced, requested_by=requested_by)
+                                    formats=produced, requested_by=requested_by, epub_books=books)
             events = self.store.events_path(run["id"])
             try:
                 args = exporter_args(self.config, settings, json_log=events, mode=mode,
-                                     folders=folders, accounts=accounts, formats=formats)
+                                     folders=folders, accounts=accounts, formats=formats,
+                                     epub_books=epub_books)
                 Path(settings.export_root).mkdir(parents=True, exist_ok=True)
                 events.touch()
                 log = open(self.store.log_path(run["id"]), "ab")

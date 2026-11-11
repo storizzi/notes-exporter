@@ -82,6 +82,7 @@ class RunRequest(BaseModel):
     folders: List[str] = Field(default_factory=list)
     accounts: List[str] = Field(default_factory=list)
     formats: List[RunFormat] = Field(default_factory=list)  # type: ignore[valid-type]
+    epub_books: Optional[Literal["none", "folder"]] = None
     trigger: Literal["api", "ui", "cli"] = "api"
 
 
@@ -252,6 +253,7 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
             "manifest_present": os.path.isfile(os.path.join(root, "manifest.json")),
             "permission": ctx.permissions.get(),
             "formats": settings.formats,
+            "epub_books": settings.epub_books,
             "version": __version__,
         }
 
@@ -332,7 +334,8 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
         body = body or RunRequest()
         try:
             run = ctx.manager.start(trigger=body.trigger, mode=body.mode, folders=body.folders,
-                                    accounts=body.accounts, formats=list(body.formats), requested_by=p.label)
+                                    accounts=body.accounts, formats=list(body.formats),
+                                    epub_books=body.epub_books, requested_by=p.label)
         except RunBusy as e:
             return JSONResponse({"detail": "a run is already in progress", "running_run_id": e.running_run_id},
                                 status_code=409)

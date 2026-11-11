@@ -269,3 +269,45 @@ def test_exporter_args_options(make_config, tmp_path):
     assert argv[argv.index("--image-format") + 1] == "jpeg"
     assert argv[argv.index("--image-format-from") + 1] == "heic"
     assert argv[argv.index("--tags") + 1] == "true"
+
+
+def test_epub_format_and_books_per_run(service, argsfile):
+    client, ctx = service
+    run = client.post("/api/runs", json={"formats": ["epub"], "epub_books": "folder"}).json()["run"]
+    assert run["formats"] == ["raw", "text", "html", "epub"] and run["epub_books"] == "folder"
+    wait_done(client, run["id"])
+    argv = calls(argsfile)[0]["argv"]
+    assert argv[argv.index("--convert-epub") + 1] == "true"
+    assert argv[argv.index("--epub-books") + 1] == "folder"
+    assert argv[argv.index("--epub-book-order") + 1] == "modified"
+    # settings ask for folder books: a run can't switch them off (a union, like formats)
+    ctx.settings.update({"epub_books": "folder", "epub_book_subfolders": "nested", "epub_book_order": "title"})
+    run2 = client.post("/api/runs", json={"epub_books": "none"}).json()["run"]
+    assert run2["epub_books"] == "folder"
+    wait_done(client, run2["id"])
+    argv = calls(argsfile)[1]["argv"]
+    assert argv[argv.index("--epub-book-subfolders") + 1] == "nested"
+    assert argv[argv.index("--epub-book-order") + 1] == "title"
+    assert argv[argv.index("--convert-epub") + 1] == "false"
+    assert client.post("/api/runs", json={"epub_books": "shelf"}).status_code == 422
+    assert client.put("/api/admin/settings", json={"epub_book_order": "size"}).status_code == 422
+    assert client.get("/api/status").json()["epub_books"] == "folder"
+
+
+def test_runs_table_migrated(make_config):
+    import sqlite3
+    config = make_config()
+    config.ensure_home()
+    conn = sqlite3.connect(config.runs_db)
+    conn.execute("CREATE TABLE runs (id TEXT PRIMARY KEY, seq INTEGER NOT NULL, status TEXT NOT NULL, "
+                 "trigger TEXT NOT NULL, mode TEXT NOT NULL, folders TEXT NOT NULL DEFAULT '[]', "
+                 "accounts TEXT NOT NULL DEFAULT '[]', formats TEXT NOT NULL DEFAULT '[]', requested_by TEXT, "
+                 "created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT, exit_code INTEGER, "
+                 "counts TEXT NOT NULL DEFAULT '{}', progress TEXT NOT NULL DEFAULT '{}', message TEXT, "
+                 "exporter_run_id TEXT, manifest_sequence INTEGER, permission TEXT, pid INTEGER)")
+    conn.commit()
+    conn.close()
+    store = RunStore(config)
+    run = store.create(trigger="api", mode="incremental", folders=[], accounts=[], formats=[], requested_by="x",
+                       epub_books="folder")
+    assert run["epub_books"] == "folder"
