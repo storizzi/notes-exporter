@@ -26,8 +26,17 @@ from .config import Config
 from .db import Database
 
 ROLES = ("admin", "reader")
-SCOPES = ("read", "run", "admin")
-ROLE_SCOPES = {"admin": {"read", "run", "admin"}, "reader": {"read", "run"}}
+SCOPES = ("read", "run", "settings", "admin")
+ROLE_SCOPES = {"admin": {"read", "run", "settings", "admin"}, "reader": {"read", "run"}}
+# A scope that includes another: an admin key may also do what a settings key does.
+IMPLIED_SCOPES = {"admin": {"settings"}}
+
+
+def with_implied(scopes: Set[str]) -> Set[str]:
+    out = set(scopes)
+    for scope in scopes:
+        out |= IMPLIED_SCOPES.get(scope, set())
+    return out
 KEY_PREFIX = "ne_"
 PREFIX_LENGTH = 10
 _USERNAME = re.compile(r"^[A-Za-z0-9_.@-]{1,64}$")
@@ -352,7 +361,7 @@ class AuthStore:
         last = _parse_iso(row["last_used_at"])
         if last is None or (datetime.now(timezone.utc) - last).total_seconds() >= self.config.key_touch_seconds:
             self.db.run("UPDATE api_keys SET last_used_at=? WHERE id=?", (now_iso(), row["id"]))
-        scopes = set(row["scopes"].split(",")) & ROLE_SCOPES[owner["role"]]
+        scopes = with_implied(set(row["scopes"].split(","))) & ROLE_SCOPES[owner["role"]]
         return Principal("key", owner["id"], owner["username"], owner["role"], scopes,
                          key_id=row["id"], key_prefix=row["prefix"])
 

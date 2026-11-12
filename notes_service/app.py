@@ -20,7 +20,7 @@ from .exports import ExportReader, PathRefused, content_type, iter_file, parse_r
 from .permissions import PermissionChecker, PermissionRequestBusy
 from .runs import RunBusy, RunError, RunManager, RunStore, read_events
 from .scheduler import Scheduler
-from .settings import RUN_FORMATS, SettingsError, SettingsStore
+from .settings import CLIENT_READ_ONLY, RUN_FORMATS, SettingsError, SettingsStore
 
 WEB_DIR = Path(__file__).parent / "web"
 # Query parameters that look like credentials: refused, so a key never ends up in a log or history.
@@ -383,6 +383,31 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
     def cancel_run(run_id: str, p: Principal = Depends(need("run"))):
         _run_or_404(run_id)
         return {"run": ctx.manager.cancel(run_id)}
+
+    # ---- settings (the `settings` scope: everything but where the export goes) ----
+    @app.get("/api/settings")
+    def get_client_settings(p: Principal = Depends(need("settings"))):
+        return {"settings": ctx.settings.load().model_dump(), "read_only": list(CLIENT_READ_ONLY)}
+
+    @app.put("/api/settings")
+    async def put_client_settings(request: Request, p: Principal = Depends(need("settings"))):
+        try:
+            changes = await request.json()
+        except ValueError:
+            raise HTTPException(400, "send the settings as a JSON object")
+        if not isinstance(changes, dict):
+            raise HTTPException(400, "send the settings as a JSON object")
+        current = ctx.settings.load().model_dump()
+        moved = [k for k in CLIENT_READ_ONLY if k in changes and changes[k] != current.get(k)]
+        if moved and "admin" not in p.scopes:
+            raise HTTPException(403, f"{', '.join(moved)} can only be changed by an admin, on the service's "
+                                     "Settings page")
+        changes = {k: v for k, v in changes.items() if k not in CLIENT_READ_ONLY or "admin" in p.scopes}
+        try:
+            saved = ctx.settings.update(changes).model_dump()
+        except SettingsError as e:
+            raise HTTPException(422, str(e))
+        return {"settings": saved, "read_only": list(CLIENT_READ_ONLY)}
 
     # ---- admin ----
     @app.get("/api/admin/settings")

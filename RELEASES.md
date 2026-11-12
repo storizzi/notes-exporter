@@ -1,5 +1,6 @@
 # Releases <!-- omit from toc -->
 
+- [Unreleased - 1.5.1 - Settings for clients](#unreleased---151---settings-for-clients)
 - [11 November 2026 - Release 1.5.0 - Service API \& EPUB](#11-november-2026---release-150---service-api--epub)
 - [11 November 2026 - Release 1.4.0 - Nested Folders, Manifest \& Reliable Incremental Export](#11-november-2026---release-140---nested-folders-manifest--reliable-incremental-export)
 - [18 March 2026 - Release 1.3.0 - Bidirectional Sync, Search \& Venv Support](#18-march-2026---release-130---bidirectional-sync-search--venv-support)
@@ -9,6 +10,10 @@
 - [6 June 2025 - Release 0.3 - Automated Scheduling \& Output Improvements](#6-june-2025---release-03---automated-scheduling--output-improvements)
 - [10 June 2024 - Release 0.2 - Filename format / other file types](#10-june-2024---release-02---filename-format--other-file-types)
 - [8 December 2023 - Release 0.1 - Initial Release](#8-december-2023---release-01---initial-release)
+
+## Unreleased - 1.5.1 - Settings for clients
+
+* **New API key scope `settings`**: `GET` / `PUT /api/settings` read and change the export settings (formats, folders, deleted notes, tags, images, EPUB books, schedule) — everything except where the export is written (`export_root`), which stays with an admin. An admin key includes it. Create one with `notes-exporter apikey create --scopes read,run,settings …` (or tick **settings** on the API keys page); FunHoard uses it to show the service's settings on its collection page. See [Settings for a client](SERVICE-API.md#settings-for-a-client).
 
 ## 11 November 2026 - Release 1.5.0 - Service API & EPUB
 

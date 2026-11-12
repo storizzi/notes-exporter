@@ -16,6 +16,9 @@ ALL_FORMATS = ("raw", "text", "html", "md", "pdf", "docx", "epub")
 # Formats a run may ask for (raw is always written: it is the source of the others).
 RUN_FORMATS = ("html", "md", "pdf", "docx", "epub", "text")
 IMAGE_FORMATS = ("jpeg", "png", "heic", "tiff", "webp")
+# Settings a `settings`-scope key can read but not change: where the export is written is the
+# Mac's own business (a key could otherwise point the exporter at any folder of its user's).
+CLIENT_READ_ONLY = ("export_root",)
 _HHMM = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 

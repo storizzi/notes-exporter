@@ -61,7 +61,7 @@ def test_credentials_in_query_string_refused(service, param):
 def test_login_logout_me(service):
     client, ctx = service
     me = client.get("/api/auth/me").json()
-    assert me["username"] == "root" and set(me["scopes"]) == {"read", "run", "admin"}
+    assert me["username"] == "root" and set(me["scopes"]) == {"read", "run", "settings", "admin"}
     assert client.post("/api/auth/logout").status_code == 200
     assert client.get("/api/auth/me").status_code == 401
 
@@ -201,3 +201,45 @@ def test_security_headers_and_ui(service):
     assert client.get("/static/app.js").status_code == 200
     assert client.get("/api/nope").status_code == 404
     assert client.get("/docs").status_code == 404
+
+
+def test_settings_scope(service, tmp_path):
+    client, ctx = service
+    del client.headers["Authorization"]
+    read = make_key(ctx, ["read", "run"])
+    assert client.get("/api/settings", headers={"X-API-Key": read}).status_code == 403
+    assert client.put("/api/settings", json={"formats": ["md"]}, headers={"X-API-Key": read}).status_code == 403
+    key = make_key(ctx, ["read", "settings"])
+    h = {"X-API-Key": key}
+    body = client.get("/api/settings", headers=h).json()
+    assert body["read_only"] == ["export_root"] and body["settings"]["formats"] == ["html"]
+    root = body["settings"]["export_root"]
+    # It changes what it may, merged like the admin endpoint; the schedule merges too.
+    r = client.put("/api/settings", json={"formats": ["html", "md", "pdf"], "prune_deleted": False,
+                                          "schedule": {"enabled": True, "daily_at": "00:13"}}, headers=h)
+    assert r.status_code == 200, r.text
+    s = r.json()["settings"]
+    assert s["formats"] == ["html", "md", "pdf"] and s["prune_deleted"] is False
+    assert s["schedule"] == {"enabled": True, "interval_minutes": None, "daily_at": "00:13"}
+    # Sending export_root back unchanged is fine; moving it is not.
+    assert client.put("/api/settings", json={"export_root": root, "tags": True}, headers=h).status_code == 200
+    r = client.put("/api/settings", json={"export_root": str(tmp_path / "elsewhere")}, headers=h)
+    assert r.status_code == 403 and "export_root" in r.json()["detail"]
+    assert ctx.settings.load().export_root == root
+    # Invalid values are 422, as on the admin endpoint; nothing else is reachable with this scope.
+    assert client.put("/api/settings", json={"formats": ["exe"]}, headers=h).status_code == 422
+    assert client.put("/api/settings", json={"nope": 1}, headers=h).status_code == 422
+    assert client.get("/api/admin/settings", headers=h).status_code == 403
+    assert client.get("/api/admin/api-keys", headers=h).status_code == 403
+    # An admin key includes the settings scope, and may move the export.
+    admin = make_key(ctx, ["admin"])
+    assert client.get("/api/settings", headers={"X-API-Key": admin}).status_code == 200
+    r = client.put("/api/settings", json={"export_root": str(tmp_path / "elsewhere")}, headers={"X-API-Key": admin})
+    assert r.status_code == 200, r.text
+
+
+def test_reader_cannot_own_a_settings_key(service):
+    client, ctx = service
+    ctx.auth.create_user("kid", PASSWORD, "reader")
+    with pytest.raises(Exception):
+        ctx.auth.create_key("x", ["settings"], ctx.auth.get_user_by_name("kid")["id"])

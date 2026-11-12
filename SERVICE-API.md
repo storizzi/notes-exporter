@@ -43,7 +43,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ./notes-exporter permission request
 
 # 4. A key for FunHoard, written straight into its env file (never printed)
-./notes-exporter apikey create --name FunHoard --scopes read,run \
+./notes-exporter apikey create --name FunHoard --scopes read,run,settings \
     --env-file ~/dev/storizzi/repos/apps/desktop/media-server/backend/.env --env-var NOTES_EXPORTER_API_KEY
 
 # 5. Keep it running after you log in (stop the `serve` from step 2 first)
@@ -232,7 +232,7 @@ Missing or invalid credentials: **401** (`WWW-Authenticate: Bearer`); a valid
 one without the scope an endpoint needs: **403**.
 
 * **Users** have a username, a bcrypt password and a role: `admin` (scopes
-  read, run, admin) or `reader` (read, run). The last admin can't be removed or
+  read, run, settings, admin) or `reader` (read, run). The last admin can't be removed or
   demoted (409). Resetting a password signs that user out everywhere; removing a
   user removes their API keys.
 * **Sessions**: `POST /api/auth/login` returns a JWT (HS256, signed with a
@@ -248,7 +248,8 @@ one without the scope an endpoint needs: **403**.
 |---|---|
 | `read` | status, manifest, notes, files, runs and their events |
 | `run` | start and cancel runs |
-| `admin` | settings, users, API keys |
+| `settings` | read and change the export settings (`/api/settings`), except where the export is written |
+| `admin` | settings (and moving the export), users, API keys; includes `settings` |
 
 ## Endpoints
 
@@ -400,6 +401,17 @@ run's start (any trigger), or from the service's start when there is none;
 `daily_at "HH:MM"` (local time) runs at the first such time after the last run's
 start — a time missed while the Mac slept runs once when the service notices.
 A slot that comes while a run is in progress is skipped.
+
+### Settings for a client
+
+`GET /api/settings` (scope `settings`) → `{settings, read_only}`: the same
+settings as [below](#admin-settings-users-api-keys), and `read_only`, the
+fields this scope can't change (`["export_root"]`). `PUT /api/settings` merges
+the fields you send, as the admin endpoint does, and answers the same shape; 422
+for an invalid value or an unknown field. Sending `export_root` back unchanged
+is fine; a different one is **403** unless the key also has `admin` — a client
+that tunes the export never decides where on the Mac it is written. This is how
+FunHoard shows and changes the service's settings on its collection page.
 
 ### Admin: settings, users, API keys
 

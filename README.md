@@ -149,7 +149,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ./notes-exporter user add simon --admin --generate-password --keychain   # the password goes to your login Keychain
 ./notes-exporter serve                                                   # http://127.0.0.1:8790/
 ./notes-exporter permission request          # (another terminal, at the Mac) click Allow when macOS asks
-./notes-exporter apikey create --name FunHoard --scopes read,run \
+./notes-exporter apikey create --name FunHoard --scopes read,run,settings \
     --env-file ~/dev/storizzi/repos/apps/desktop/media-server/backend/.env --env-var NOTES_EXPORTER_API_KEY
 ./notes-exporter service install --replace-legacy                        # stop the serve above first
 ./notes-exporter permission request          # once more: the LaunchAgent asks as its own process
