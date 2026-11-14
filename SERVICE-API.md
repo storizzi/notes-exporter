@@ -321,6 +321,7 @@ GET /api/status
   "schedule": {"enabled": true, "interval_minutes": null, "daily_at": "00:13"},
   "export_root": "/Users/…/AppleNotesExport",
   "export_root_ok": true,                        // exists and writable
+  "export_root_problem": null,                   // or why not, e.g. its drive isn't connected
   "manifest_present": true,
   "permission": {"automation": "allowed", "full_disk_access": false, "checked_at": "…"},
   "formats": ["html", "md"],                     // the settings' formats

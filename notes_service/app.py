@@ -20,7 +20,7 @@ from .exports import ExportReader, PathRefused, content_type, iter_file, parse_r
 from .permissions import PermissionChecker, PermissionRequestBusy
 from .runs import RunBusy, RunError, RunManager, RunStore, read_events
 from .scheduler import Scheduler
-from .settings import CLIENT_READ_ONLY, RUN_FORMATS, SettingsError, SettingsStore
+from .settings import CLIENT_READ_ONLY, RUN_FORMATS, SettingsError, SettingsStore, export_root_problem
 from .updates import UpdateManager, UpdateRefused
 from .writes import WriteManager, WriteRefused
 
@@ -312,13 +312,15 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
         last = ctx.runs.latest(finished_only=True)
         nxt = ctx.scheduler.next_run_at()
         root = settings.export_root
+        root_problem = export_root_problem(root)
         return {
             "running_run_id": ctx.manager.running_run_id,
             "last_run": last,
             "next_run_at": nxt.isoformat(timespec="seconds") if nxt else None,
             "schedule": settings.schedule.model_dump(),
             "export_root": root,
-            "export_root_ok": os.path.isdir(root) and os.access(root, os.W_OK),
+            "export_root_ok": not root_problem and os.path.isdir(root) and os.access(root, os.W_OK),
+            "export_root_problem": root_problem,
             "manifest_present": os.path.isfile(os.path.join(root, "manifest.json")),
             "permission": ctx.permissions.get(),
             "formats": settings.formats,

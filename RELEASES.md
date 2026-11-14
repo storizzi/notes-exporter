@@ -1,5 +1,6 @@
 # Releases <!-- omit from toc -->
 
+- [Unreleased - 1.6.1 - Export folder on another drive](#unreleased---161---export-folder-on-another-drive)
 - [14 November 2026 - Release 1.6.0 - Updates from a Client](#14-november-2026---release-160---updates-from-a-client)
 - [14 November 2026 - Release 1.5.1 - Settings for Clients \& Writing Notes](#14-november-2026---release-151---settings-for-clients--writing-notes)
 - [11 November 2026 - Release 1.5.0 - Service API \& EPUB](#11-november-2026---release-150---service-api--epub)
@@ -11,6 +12,10 @@
 - [6 June 2025 - Release 0.3 - Automated Scheduling \& Output Improvements](#6-june-2025---release-03---automated-scheduling--output-improvements)
 - [10 June 2024 - Release 0.2 - Filename format / other file types](#10-june-2024---release-02---filename-format--other-file-types)
 - [8 December 2023 - Release 0.1 - Initial Release](#8-december-2023---release-01---initial-release)
+
+## Unreleased - 1.6.1 - Export folder on another drive
+
+* **An export folder on a drive that isn't connected is refused** instead of created: with `export_root` under `/Volumes/<drive>/…` and that drive not mounted, a run fails saying so (before, the folder was made on the internal disk and the whole export written there). `GET /api/status` answers `export_root_problem` and the web page shows it.
 
 ## 14 November 2026 - Release 1.6.0 - Updates from a Client
 

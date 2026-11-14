@@ -81,7 +81,7 @@ async function loadStatus() {
   add('Running', s.running_run_id ? 'yes' : 'no');
   add('Last run', last ? `${last.status} — ${when(last.finished_at)}${last.message ? ' — ' + last.message : ''}` : 'never');
   add('Next run', s.next_run_at ? when(s.next_run_at) : (s.schedule.enabled ? '—' : 'not scheduled'));
-  add('Export folder', `${s.export_root} ${s.export_root_ok ? '' : '(not there yet / not writable)'}`);
+  add('Export folder', `${s.export_root} ${s.export_root_ok ? '' : `(${s.export_root_problem || 'not there yet / not writable'})`}`);
   add('Formats', s.formats.join(', '));
   const auto = s.permission.automation || '';
   const askable = auto === 'prompt' || auto === 'not-running' || auto.startsWith('unknown');

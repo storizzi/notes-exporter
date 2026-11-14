@@ -111,6 +111,26 @@ class Settings(BaseModel):
         return v
 
 
+_ismount = os.path.ismount  # tests replace it
+
+
+def export_root_problem(root: str) -> Optional[str]:
+    """Why an export can't be written to ``root`` now, else None.
+
+    A root on another drive (``/Volumes/<name>/…``) needs that drive mounted: otherwise
+    creating the folder would make ``/Volumes/<name>`` on the internal disk and the whole
+    export would quietly be written there instead.
+    """
+    parts = Path(os.path.expanduser(str(root))).parts
+    if len(parts) > 2 and parts[0] == "/" and parts[1] == "Volumes":
+        volume = os.path.join("/Volumes", parts[2])
+        if os.path.islink(volume) and os.path.realpath(volume) == "/":
+            return None  # /Volumes/Macintosh HD is the startup disk
+        if not _ismount(volume):
+            return f"the drive \u201c{parts[2]}\u201d isn't connected ({volume} is not mounted)"
+    return None
+
+
 def default_export_root() -> str:
     return str(Path.home() / "Downloads" / "AppleNotesExport")
 

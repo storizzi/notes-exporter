@@ -18,7 +18,7 @@ from typing import Callable, List, Optional
 
 from .config import Config
 from .db import Database
-from .settings import (SettingsStore, _clean_names, effective_epub_books, exporter_args, exporter_env,
+from .settings import (SettingsStore, export_root_problem, _clean_names, effective_epub_books, exporter_args, exporter_env,
                        produced_formats)
 
 STATUSES = ("queued", "running", "ok", "partial", "failed", "cancelled")
@@ -270,6 +270,9 @@ class RunManager:
                 args = exporter_args(self.config, settings, json_log=events, mode=mode,
                                      folders=folders, accounts=accounts, formats=formats,
                                      epub_books=epub_books)
+                problem = export_root_problem(settings.export_root)
+                if problem:
+                    raise ValueError(problem)
                 Path(settings.export_root).mkdir(parents=True, exist_ok=True)
                 events.touch()
                 log = open(self.store.log_path(run["id"]), "ab")
