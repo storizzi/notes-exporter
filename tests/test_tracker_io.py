@@ -130,6 +130,36 @@ class TestLoad:
     def test_load_missing_file(self, tmp_path):
         assert tio.load_lines(tmp_path / "none.json", False) == []
 
+    def test_a_raw_file_from_an_old_exporter_is_exported_again(self, tmp_path, monkeypatch):
+        # Before 1.5.0 raw files were written in Mac Roman and appended to: such a file
+        # isn't UTF-8, and its note must be exported again (dates blanked), whatever its date.
+        monkeypatch.setenv("NOTES_EXPORT_USE_SUBDIRS", "true")
+        data = tmp_path / "data"
+        data.mkdir()
+        tracker = data / "iCloud-Notes.json"
+        tracker.write_text(json.dumps({
+            "1": {"filename": "Old", "modified": "legacy", "modifiedAt": "2026-03-05T07:08:09+00:00"},
+            "2": {"filename": "New", "modified": "legacy", "modifiedAt": "2026-03-05T07:08:09+00:00",
+                  "subdir": "iCloud/Notes"},
+            "3": {"filename": "Missing", "modified": "legacy", "modifiedAt": "2026-03-05T07:08:09+00:00"},
+        }))
+        (tmp_path / "raw" / "iCloud-Notes").mkdir(parents=True)
+        (tmp_path / "raw" / "iCloud" / "Notes").mkdir(parents=True)
+        old = "doesn’t".encode("mac_roman") + "doesn’t".encode("utf-8")
+        (tmp_path / "raw" / "iCloud-Notes" / "Old.html").write_bytes(old)
+        (tmp_path / "raw" / "iCloud" / "Notes" / "New.html").write_bytes("doesn’t".encode("utf-8"))
+        rows = {p[0]: p for p in map(tio.split_line, tio.load_lines(tracker, False))}
+        assert rows["1"][2] == "" and rows["1"][3] == ""
+        assert rows["2"][3] == "legacy" and rows["2"][2] != ""
+        assert rows["3"][3] == "legacy"
+
+
+def test_mixed_old_raw_files_decode_each_part():
+    from notes_export_utils import decode_note_bytes
+    mixed = "doesn’t — ".encode("mac_roman") + "doesn’t — café".encode("utf-8")
+    assert decode_note_bytes(mixed) == "doesn’t — doesn’t — café"
+    assert decode_note_bytes("plain ’".encode("utf-8")) == "plain ’"
+
 
 class TestFinalize:
     def write_tracker(self, data_dir, name, records):

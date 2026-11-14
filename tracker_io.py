@@ -160,6 +160,29 @@ def tracker_files(data_dir) -> List[Path]:
 
 # ── load ──────────────────────────────────────────────────────────────────
 
+def is_clean_utf8(path) -> bool:
+    """True when the file is missing or valid UTF-8 (False: written by an old exporter)."""
+    try:
+        Path(path).read_bytes().decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def raw_file_for(json_path: Path, rec: dict) -> Optional[Path]:
+    """The raw HTML a record's note was exported to (``<root>/raw[/<subdir>]/<filename>.html``)."""
+    filename = rec.get("filename")
+    if not filename:
+        return None
+    raw = Path(json_path).parent.parent / "raw"
+    if os.getenv("NOTES_EXPORT_USE_SUBDIRS", "true").lower() == "true":
+        subdir = rec.get("subdir") if isinstance(rec.get("subdir"), str) else Path(json_path).stem
+        raw = raw / subdir
+    return raw / f"{filename}.html"
+
+
 def load_lines(json_path: Path, include_deleted: bool) -> List[str]:
     data = read_json(json_path)
     lines = []
@@ -174,6 +197,12 @@ def load_lines(json_path: Path, include_deleted: bool) -> List[str]:
             rec.get("modified", ""),
             "1" if deleted else "0",
         ]
+        # A raw file that isn't UTF-8 was written by an exporter before 1.5.0 (Mac Roman,
+        # and appended to rather than replaced): blank the dates so this run exports the
+        # note again — rewritten whole, in UTF-8 — and its html / md / pdf follow.
+        raw = None if deleted else raw_file_for(json_path, rec)
+        if raw is not None and not is_clean_utf8(raw):
+            fields[2] = fields[3] = ""
         lines.append("\t".join(escape(str(f)) for f in fields))
     return lines
 

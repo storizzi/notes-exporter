@@ -1,9 +1,28 @@
 import json
+import codecs
 import os
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
-from tracker_io import tracker_files
+from tracker_io import is_clean_utf8, tracker_files  # noqa: F401 (is_clean_utf8 re-exported)
+
+def decode_note_bytes(data: bytes) -> str:
+    """A note file's text: UTF-8, with any byte that isn't valid UTF-8 read as Mac Roman.
+
+    Exports before 1.5.0 appended to files instead of replacing them, and the
+    oldest copies were written in Mac Roman, so a raw file can hold both. Reading
+    the whole file as Mac Roman (the old fallback) turned every UTF-8 character
+    in it into mojibake (an apostrophe became "‚Äô"); this keeps each part right.
+    """
+    return data.decode("utf-8", errors="notes_mac_roman")
+
+
+def _mac_roman_fallback(err: UnicodeDecodeError):
+    return err.object[err.start:err.end].decode("mac_roman"), err.end
+
+
+codecs.register_error("notes_mac_roman", _mac_roman_fallback)
+
 
 def _tracker_stem(json_file) -> str:
     """'data/iCloud-Notes.json' -> 'iCloud-Notes'; a bare tracker name is returned as is."""

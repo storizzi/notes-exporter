@@ -14,6 +14,7 @@
 ## Unreleased - 1.5.1 - Settings for clients
 
 * **New API key scope `settings`**: `GET` / `PUT /api/settings` read and change the export settings (formats, folders, deleted notes, tags, images, EPUB books, schedule) — everything except where the export is written (`export_root`), which stays with an admin. An admin key includes it. Create one with `notes-exporter apikey create --scopes read,run,settings …` (or tick **settings** on the API keys page); FunHoard uses it to show the service's settings on its collection page. See [Settings for a client](SERVICE-API.md#settings-for-a-client).
+* **Garbled characters in older exports fixed**: exports made before 1.5.0 wrote some raw files in Mac Roman and appended each re-export to the old file instead of replacing it, so a note that hadn't changed since kept a raw file holding both. The HTML step then read the whole file as Mac Roman: the note appeared two or more times and every UTF-8 character in it was garbled (`’` became `‚Äô`). Now any note whose raw file isn't valid UTF-8 is exported again on the next run, whatever its date (`tracker_io.py load`), so its raw, html, md, pdf… are rewritten once; and a mixed file is read part by part (`decode_note_bytes`), never wholesale as Mac Roman.
 
 ## 11 November 2026 - Release 1.5.0 - Service API & EPUB
 

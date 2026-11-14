@@ -29,7 +29,7 @@ from urllib.parse import quote
 
 from bs4 import BeautifulSoup
 
-from notes_export_utils import get_tracker, run_for_notes
+from notes_export_utils import decode_note_bytes, get_tracker, run_for_notes
 
 
 def _encode_src(relative_path: str) -> str:
@@ -202,15 +202,11 @@ def process_note(tracker, note, settings, image_hash_registry) -> Optional[bool]
         print(f"Warning: Raw file not found: {raw_file}")
         return False
 
-    html_content = None
-    for encoding in ['utf-8', 'MacRoman', 'latin-1']:
-        try:
-            html_content = raw_file.read_text(encoding=encoding)
-            break
-        except UnicodeDecodeError:
-            continue
-    if html_content is None:
-        print(f"Error: Could not read {raw_file} with any encoding")
+    try:
+        # UTF-8, any stray old Mac Roman bytes read as Mac Roman (never the whole file)
+        html_content = decode_note_bytes(raw_file.read_bytes())
+    except OSError as exc:
+        print(f"Error: Could not read {raw_file}: {exc}")
         return False
 
     soup = BeautifulSoup(html_content, "html.parser")
