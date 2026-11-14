@@ -41,7 +41,7 @@ def test_users_and_keys(state, monkeypatch, capsys):
     assert main(["apikey", "list"]) == 0
     listed = capsys.readouterr().out
     assert key[:10] in listed and key not in listed
-    assert main(["apikey", "create", "--name", "x", "--scopes", "write"]) == 1
+    assert main(["apikey", "create", "--name", "x", "--scopes", "bogus"]) == 1
     assert main(["apikey", "revoke", key[:10]]) == 0
     assert store.principal_from_key(key) is None
     stdin(monkeypatch, "a different password\n")

@@ -69,6 +69,8 @@ class Config:
     progress_write_seconds: float = 1.0
     key_touch_seconds: float = 60.0
     docs: bool = False
+    writer_helper: Path = REPO_DIR / "notes_write_helper.py"
+    write_timeout_seconds: float = 180.0
 
     @classmethod
     def from_env(cls, **overrides) -> "Config":
@@ -109,6 +111,9 @@ class Config:
             progress_write_seconds=float(_env("NOTES_SERVICE_PROGRESS_WRITE_SECONDS", "1")),
             key_touch_seconds=float(_env("NOTES_SERVICE_KEY_TOUCH_SECONDS", "60")),
             docs=_bool("NOTES_SERVICE_DOCS", False),
+            writer_helper=Path(_env("NOTES_SERVICE_WRITER_HELPER",
+                                    str(REPO_DIR / "notes_write_helper.py"))).expanduser(),
+            write_timeout_seconds=float(_env("NOTES_SERVICE_WRITE_TIMEOUT_SECONDS", "180")),
         )
         known = {f.name for f in fields(cls)}
         return replace(cfg, **{k: v for k, v in overrides.items() if k in known and v is not None})

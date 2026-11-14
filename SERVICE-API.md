@@ -232,7 +232,7 @@ Missing or invalid credentials: **401** (`WWW-Authenticate: Bearer`); a valid
 one without the scope an endpoint needs: **403**.
 
 * **Users** have a username, a bcrypt password and a role: `admin` (scopes
-  read, run, settings, admin) or `reader` (read, run). The last admin can't be removed or
+  read, run, settings, write, admin) or `reader` (read, run). The last admin can't be removed or
   demoted (409). Resetting a password signs that user out everywhere; removing a
   user removes their API keys.
 * **Sessions**: `POST /api/auth/login` returns a JWT (HS256, signed with a
@@ -248,7 +248,8 @@ one without the scope an endpoint needs: **403**.
 |---|---|
 | `read` | status, manifest, notes, files, runs and their events |
 | `run` | start and cancel runs |
-| `settings` | read and change the export settings (`/api/settings`), except where the export is written |
+| `settings` | read and change the export settings (`/api/settings`), except where the export is written and whether clients may write |
+| `write` | change and create notes in Apple Notes ([Writing notes](#writing-notes)) — only while the admin has turned on `allow_writes`; not implied by `admin` |
 | `admin` | settings (and moving the export), users, API keys; includes `settings` |
 
 ## Endpoints
@@ -266,6 +267,9 @@ errors: 422 with FastAPI's list form).
 | GET | `/status` | read | running run, last run, next run, permissions, formats |
 | GET | `/manifest` | read | manifest.json verbatim, ETag / 304 |
 | GET | `/notes`, `/notes/{id}` | read | note entries from the manifest |
+| GET | `/writes` | read | whether writing is on, and whether you may |
+| PUT | `/notes/{id}` | write | change a note from Markdown |
+| POST | `/notes` | write | a new note from Markdown |
 | GET, HEAD | `/files/{path}` | read | a file of the export, Range / ETag |
 | POST | `/runs` | run | start a run (202), 409 if one is running |
 | GET | `/runs`, `/runs/{id}` | read | run records |
@@ -456,6 +460,42 @@ owner_user_id, created_at, last_used_at, expires_at}]}`; `POST {name, scopes,
 owner_user_id?, expires_at?}` → 201 `{api_key, key}` — **`key` is only ever in
 this response**; `DELETE /api/admin/api-keys/{id}` revokes it.
 
+## Writing notes
+
+The service can change Apple Notes, behind several fences:
+
+* **Off by default.** The admin turns on `allow_writes` (Settings → "Allow clients to
+  write notes"); a `settings` key can't (it is in `read_only`). Every write needs the
+  `write` scope, which `admin` doesn't imply. Off: **403** `reason: "off"`.
+* **Never during an export, one write at a time:** **409** `reason: "running"` (with
+  `running_run_id`) or `"busy"`.
+* **Conflicts.** An update sends `base_modified`, the note's `modified` when the client
+  read it. A newer export → **409** `reason: "export"` (`modified`). Then the service
+  asks Notes for the note's modification date just before writing; a change made in
+  Notes after the last export → **409** `reason: "notes"` (`notes_modified`). `force: true`
+  skips both — the client's version replaces whatever Notes has.
+* **What a rewrite loses.** Writing replaces the note's whole body: pictures go back in
+  (embedded), but attachments that aren't pictures and a checklist's ticks don't. Such a
+  note is **409** `reason: "losses"` with `losses` in words, until the client sends
+  `accept_losses: true` after showing them. Locked and deleted notes are never written (409).
+* A new note goes only into a folder the export already holds notes in (404 otherwise).
+
+`GET /api/writes` → `{allowed, busy, running_run_id, can_write}`.
+
+`PUT /api/notes/{id}` `{markdown, base_modified, title?, force?, accept_losses?, export?, formats?}` →
+`{note_id, modified, run}`. `POST /api/notes` `{account, folder_path, markdown, title?, export?, formats?}`
+→ **201** the same. The Markdown becomes HTML with pandoc; a picture it links is embedded
+when its file lies inside the export folder (anything outside, `..` or a symlink out, is
+left as a link). With `export` (default true) the service then exports that note's folder
+(adding `formats`), and `run` is that run, so the manifest soon has the new version.
+Other errors: 503 `reason: "permission"` (allow the service under Privacy & Security →
+Automation), 404 `not_found`, 504 `timeout`, 501 off macOS.
+
+Each write is appended to `writes.ndjson` in the state directory — when, who, which note,
+the outcome — never the note's text. The work is `notes_write_helper.py` (pandoc, then
+`osascript notes_write.applescript`) in a subprocess with the exporter's clean environment
+(`NOTES_SERVICE_WRITER_HELPER`, `NOTES_SERVICE_WRITE_TIMEOUT_SECONDS`, default 180).
+
 ## Formats and EPUB books
 
 The service's `formats` setting is what every run produces. A client can ask a
@@ -497,8 +537,10 @@ are tombstones.
 
 ## Safety
 
-The service never writes to Apple Notes: it never passes `--sync` or
-`--sync-only`, and blocks the sync variables from the exporter's environment.
+Exports never write to Apple Notes: the service never passes `--sync` or
+`--sync-only`, and blocks the sync variables from the exporter's environment. The only
+writes are [Writing notes](#writing-notes), off until the admin allows them; their tests
+use `tests/service/fake_writer.py` and fake `osascript` / `pandoc`, never Notes.
 Its tests never touch real Notes or the real export folder: the exporter is
 `tests/service/fake_exporter.py`, or the real `exportnotes.zsh` with
 `tests/fake_osascript.py` first on its `PATH`, every test in its own temporary

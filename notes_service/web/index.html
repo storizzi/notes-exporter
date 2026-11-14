@@ -86,6 +86,7 @@
         <label class="check"><input type="checkbox" name="html_wrap"> Full HTML pages with titles</label>
         <label class="check"><input type="checkbox" name="tags"> Read #tags from the Notes database (needs Full Disk Access)</label>
         <label class="check"><input type="checkbox" name="tags_in_content"> Write a Tags line into notes</label>
+        <label class="check"><input type="checkbox" name="allow_writes"> Allow clients to write notes (change and create notes in Apple Notes — keys with the write scope, such as FunHoard's editor)</label>
         <label>Convert images to <select name="image_format"><option value="">(keep)</option><option>jpeg</option><option>png</option><option>heic</option><option>tiff</option><option>webp</option></select></label>
         <fieldset><legend>Schedule</legend>
           <label class="check"><input type="checkbox" name="schedule_enabled"> Export automatically</label>
@@ -127,6 +128,7 @@
           <label class="check"><input type="checkbox" name="scope" value="read" checked> read</label>
           <label class="check"><input type="checkbox" name="scope" value="run"> run</label>
           <label class="check"><input type="checkbox" name="scope" value="settings"> settings</label>
+          <label class="check"><input type="checkbox" name="scope" value="write"> write (change notes in Apple Notes)</label>
           <label class="check"><input type="checkbox" name="scope" value="admin"> admin</label>
         </fieldset>
         <label>Expires (optional) <input name="expires_at" type="date"></label>

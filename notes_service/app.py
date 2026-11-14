@@ -14,13 +14,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import API_VERSION, MANIFEST_VERSION, __version__
-from .auth import ROLES, AuthError, AuthStore, LoginLimiter, Principal
+from .auth import ROLES, SCOPES, AuthError, AuthStore, LoginLimiter, Principal
 from .config import Config
 from .exports import ExportReader, PathRefused, content_type, iter_file, parse_range
 from .permissions import PermissionChecker, PermissionRequestBusy
 from .runs import RunBusy, RunError, RunManager, RunStore, read_events
 from .scheduler import Scheduler
 from .settings import CLIENT_READ_ONLY, RUN_FORMATS, SettingsError, SettingsStore
+from .writes import WriteManager, WriteRefused
 
 WEB_DIR = Path(__file__).parent / "web"
 # Query parameters that look like credentials: refused, so a key never ends up in a log or history.
@@ -33,6 +34,7 @@ UI_CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'sel
 FILE_CSP = "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; media-src 'self'"
 
 RunFormat = Literal[RUN_FORMATS]  # type: ignore[valid-type]
+Scope = Literal[SCOPES]  # type: ignore[valid-type]
 
 
 class Context:
@@ -52,6 +54,41 @@ class Context:
             last_started=self._last_started,
             start_run=lambda: self.manager.start(trigger="schedule", requested_by="schedule"),
             is_running=lambda: self.manager.running_run_id is not None)
+        self.writes = WriteManager(
+            config, load_settings=self.settings.load, note_entry=self._note_entry,
+            known_folder=self._known_folder, export_root=lambda: self.settings.load().export_root,
+            running_run_id=lambda: self.manager.running_run_id, start_run=self._export_folder)
+
+    def _note_entry(self, note_id: str) -> Optional[dict]:
+        try:
+            view = self.exports.manifest()
+        except ValueError:
+            return None
+        return self.exports.note(view, note_id) if view else None
+
+    def _known_folder(self, account: str, folders: List[str]) -> bool:
+        """Whether the export holds a note in that folder (or under it) of that account (name or id)."""
+        try:
+            view = self.exports.manifest()
+        except ValueError:
+            return False
+        if not view:
+            return False
+        for n in view.data.get("notes", []):
+            path = list(n.get("folder_path") or [])
+            if account in (n.get("account"), n.get("account_id")) and path[:len(folders)] == folders:
+                return True
+        return False
+
+    def _export_folder(self, account: str, folders: List[str], formats: Optional[List[str]]):
+        """After a write: export that folder so the manifest has the new version."""
+        try:
+            return self.manager.start(trigger="api", folders=["/".join(folders)] if folders else [],
+                                      accounts=[account] if account else [],
+                                      formats=[f for f in formats or [] if f in RUN_FORMATS],
+                                      requested_by="write")
+        except RunBusy:
+            return None
 
     def _last_started(self) -> Optional[str]:
         last = self.runs.latest()
@@ -89,6 +126,25 @@ class RunRequest(BaseModel):
     trigger: Literal["api", "ui", "cli"] = "api"
 
 
+class NoteUpdate(BaseModel):
+    markdown: str
+    base_modified: Optional[str] = None
+    title: str = ""
+    force: bool = False
+    accept_losses: bool = False
+    export: bool = True
+    formats: List[RunFormat] = Field(default_factory=list)  # type: ignore[valid-type]
+
+
+class NoteCreate(BaseModel):
+    account: str
+    folder_path: List[str]
+    markdown: str
+    title: str = ""
+    export: bool = True
+    formats: List[RunFormat] = Field(default_factory=list)  # type: ignore[valid-type]
+
+
 class UserCreate(BaseModel):
     username: str
     password: str
@@ -102,7 +158,7 @@ class UserPatch(BaseModel):
 
 class KeyCreate(BaseModel):
     name: str
-    scopes: List[Literal["read", "run", "admin"]] = Field(default_factory=lambda: ["read"])
+    scopes: List[Scope] = Field(default_factory=lambda: ["read"])  # type: ignore[valid-type]
     owner_user_id: Optional[str] = None
     expires_at: Optional[str] = None
 
@@ -258,6 +314,7 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
             "formats": settings.formats,
             "epub_books": settings.epub_books,
             "version": __version__,
+            "writes": {"allowed": settings.allow_writes},
         }
 
     def _manifest_or_404():
@@ -285,6 +342,31 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
         view = _manifest_or_404()
         return ctx.exports.notes(view, changed_since_sequence=changed_since_sequence, account=account,
                                  folder=folder, include_deleted=include_deleted)
+
+    # ---- writing to Notes (the `write` scope; writes.py has the fences) ----
+    def _write_error(e: WriteRefused):
+        return JSONResponse({"detail": str(e), **e.info}, status_code=e.status)
+
+    @app.get("/api/writes")
+    def write_state(p: Principal = Depends(need("read"))):
+        return dict(ctx.writes.state(), can_write="write" in p.scopes)
+
+    @app.post("/api/notes", status_code=201)
+    def create_note(body: NoteCreate, p: Principal = Depends(need("write"))):
+        try:
+            return ctx.writes.create(account=body.account, folder_path=body.folder_path, markdown=body.markdown,
+                                     title=body.title, by=p.label, export=body.export, formats=list(body.formats))
+        except WriteRefused as e:
+            return _write_error(e)
+
+    @app.put("/api/notes/{note_id:path}")
+    def update_note(note_id: str, body: NoteUpdate, p: Principal = Depends(need("write"))):
+        try:
+            return ctx.writes.update(note_id, markdown=body.markdown, base_modified=body.base_modified,
+                                     title=body.title, force=body.force, accept_losses=body.accept_losses,
+                                     by=p.label, export=body.export, formats=list(body.formats))
+        except WriteRefused as e:
+            return _write_error(e)
 
     @app.get("/api/notes/{note_id:path}")
     def note(note_id: str, p: Principal = Depends(need("read"))):

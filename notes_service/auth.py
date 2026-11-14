@@ -26,8 +26,8 @@ from .config import Config
 from .db import Database
 
 ROLES = ("admin", "reader")
-SCOPES = ("read", "run", "settings", "admin")
-ROLE_SCOPES = {"admin": {"read", "run", "settings", "admin"}, "reader": {"read", "run"}}
+SCOPES = ("read", "run", "settings", "write", "admin")
+ROLE_SCOPES = {"admin": {"read", "run", "settings", "write", "admin"}, "reader": {"read", "run"}}
 # A scope that includes another: an admin key may also do what a settings key does.
 IMPLIED_SCOPES = {"admin": {"settings"}}
 

@@ -191,7 +191,7 @@ async function loadSettings() {
     if (ALWAYS.has(id)) box.disabled = true;
     fs.append(el('label', { class: 'check' }, box, ' ' + label));
   }
-  for (const k of ['folder_hierarchy', 'prune_deleted', 'html_wrap', 'tags', 'tags_in_content']) f[k].checked = !!s[k];
+  for (const k of ['folder_hierarchy', 'prune_deleted', 'html_wrap', 'tags', 'tags_in_content', 'allow_writes']) f[k].checked = !!s[k];
   f.exclude_folders.value = (s.exclude_folders || []).join('\n');
   f.image_format.value = s.image_format || '';
   if (f.epub_books) {
@@ -224,6 +224,7 @@ async function saveSettings(ev) {
     formats: formats.length ? formats : ['html'],
     folder_hierarchy: f.folder_hierarchy.checked, prune_deleted: f.prune_deleted.checked,
     html_wrap: f.html_wrap.checked, tags: f.tags.checked, tags_in_content: f.tags_in_content.checked,
+    allow_writes: f.allow_writes.checked,
     exclude_folders: f.exclude_folders.value.split('\n').map((x) => x.trim()).filter(Boolean),
     image_format: f.image_format.value || null,
     schedule: {

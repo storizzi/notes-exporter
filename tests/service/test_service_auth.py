@@ -61,7 +61,7 @@ def test_credentials_in_query_string_refused(service, param):
 def test_login_logout_me(service):
     client, ctx = service
     me = client.get("/api/auth/me").json()
-    assert me["username"] == "root" and set(me["scopes"]) == {"read", "run", "settings", "admin"}
+    assert me["username"] == "root" and set(me["scopes"]) == {"read", "run", "settings", "write", "admin"}
     assert client.post("/api/auth/logout").status_code == 200
     assert client.get("/api/auth/me").status_code == 401
 
@@ -212,7 +212,7 @@ def test_settings_scope(service, tmp_path):
     key = make_key(ctx, ["read", "settings"])
     h = {"X-API-Key": key}
     body = client.get("/api/settings", headers=h).json()
-    assert body["read_only"] == ["export_root"] and body["settings"]["formats"] == ["html"]
+    assert body["read_only"] == ["export_root", "allow_writes"] and body["settings"]["formats"] == ["html"]
     root = body["settings"]["export_root"]
     # It changes what it may, merged like the admin endpoint; the schedule merges too.
     r = client.put("/api/settings", json={"formats": ["html", "md", "pdf"], "prune_deleted": False,

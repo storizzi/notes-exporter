@@ -18,7 +18,8 @@ RUN_FORMATS = ("html", "md", "pdf", "docx", "epub", "text")
 IMAGE_FORMATS = ("jpeg", "png", "heic", "tiff", "webp")
 # Settings a `settings`-scope key can read but not change: where the export is written is the
 # Mac's own business (a key could otherwise point the exporter at any folder of its user's).
-CLIENT_READ_ONLY = ("export_root",)
+# Whether clients may write to Notes is the Mac owner's decision too.
+CLIENT_READ_ONLY = ("export_root", "allow_writes")
 _HHMM = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 
@@ -72,6 +73,8 @@ class Settings(BaseModel):
     epub_book_order: Literal["modified", "created", "title"] = "modified"
     epub_book_subfolders: Literal["separate", "nested"] = "separate"
     schedule: Schedule = Field(default_factory=Schedule)
+    # Clients with the `write` scope may change and create notes (notes_service/writes.py).
+    allow_writes: bool = False
 
     @field_validator("formats")
     @classmethod
