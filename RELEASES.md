@@ -1,6 +1,6 @@
 # Releases <!-- omit from toc -->
 
-- [Unreleased - 1.5.1 - Settings for clients](#unreleased---151---settings-for-clients)
+- [14 November 2026 - Release 1.5.1 - Settings for Clients \& Writing Notes](#14-november-2026---release-151---settings-for-clients--writing-notes)
 - [11 November 2026 - Release 1.5.0 - Service API \& EPUB](#11-november-2026---release-150---service-api--epub)
 - [11 November 2026 - Release 1.4.0 - Nested Folders, Manifest \& Reliable Incremental Export](#11-november-2026---release-140---nested-folders-manifest--reliable-incremental-export)
 - [18 March 2026 - Release 1.3.0 - Bidirectional Sync, Search \& Venv Support](#18-march-2026---release-130---bidirectional-sync-search--venv-support)
@@ -11,7 +11,11 @@
 - [10 June 2024 - Release 0.2 - Filename format / other file types](#10-june-2024---release-02---filename-format--other-file-types)
 - [8 December 2023 - Release 0.1 - Initial Release](#8-december-2023---release-01---initial-release)
 
-## Unreleased - 1.5.1 - Settings for clients
+## 14 November 2026 - Release 1.5.1 - Settings for Clients & Writing Notes
+
+### Upgrading from 1.5.0 <!-- omit from toc -->
+
+Restart the service (`launchctl kickstart -k gui/$(id -u)/com.storizzi.notes-exporter`) to load the new endpoints. Writing stays off until an admin ticks **Allow clients to write notes**, and a key needs the `write` scope; the first write makes macOS ask whether the service may control Notes.
 
 * **New API key scope `settings`**: `GET` / `PUT /api/settings` read and change the export settings (formats, folders, deleted notes, tags, images, EPUB books, schedule) — everything except where the export is written (`export_root`), which stays with an admin. An admin key includes it. Create one with `notes-exporter apikey create --scopes read,run,settings …` (or tick **settings** on the API keys page); FunHoard uses it to show the service's settings on its collection page. See [Settings for a client](SERVICE-API.md#settings-for-a-client).
 * **Writing notes through the service** (scope `write`, off until an admin ticks **Allow clients to write notes** in Settings): `PUT /api/notes/{id}` changes a note from Markdown and `POST /api/notes` makes one in a folder the export holds. A write is refused while an export runs, when the note changed since the client read it or in Notes since the last export (unless forced), and — until the client confirms — when the rewrite would lose attachments that aren't pictures or a checklist's ticks; locked notes are never written. Pictures the Markdown links inside the export folder are embedded, anything outside it is not. The service then exports that folder. Every write is logged (never the text) in `writes.ndjson`. See [Writing notes](SERVICE-API.md#writing-notes).
