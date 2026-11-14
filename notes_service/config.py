@@ -71,6 +71,13 @@ class Config:
     docs: bool = False
     writer_helper: Path = REPO_DIR / "notes_write_helper.py"
     write_timeout_seconds: float = 180.0
+    allow_update: bool = True
+    update_check_hours: float = 24.0
+    update_check_min_seconds: float = 60.0
+    update_timeout_seconds: float = 300.0
+    update_git_timeout_seconds: float = 30.0
+    update_python: str = ""
+    restart_delay_seconds: float = 1.0
 
     @classmethod
     def from_env(cls, **overrides) -> "Config":
@@ -114,6 +121,13 @@ class Config:
             writer_helper=Path(_env("NOTES_SERVICE_WRITER_HELPER",
                                     str(REPO_DIR / "notes_write_helper.py"))).expanduser(),
             write_timeout_seconds=float(_env("NOTES_SERVICE_WRITE_TIMEOUT_SECONDS", "180")),
+            allow_update=_bool("NOTES_SERVICE_ALLOW_UPDATE", True),
+            update_check_hours=float(_env("NOTES_SERVICE_UPDATE_CHECK_HOURS", "24")),
+            update_check_min_seconds=float(_env("NOTES_SERVICE_UPDATE_CHECK_MIN_SECONDS", "60")),
+            update_timeout_seconds=float(_env("NOTES_SERVICE_UPDATE_TIMEOUT_SECONDS", "300")),
+            update_git_timeout_seconds=float(_env("NOTES_SERVICE_UPDATE_GIT_TIMEOUT_SECONDS", "30")),
+            update_python=_env("NOTES_SERVICE_UPDATE_PYTHON", ""),
+            restart_delay_seconds=float(_env("NOTES_SERVICE_RESTART_DELAY_SECONDS", "1")),
         )
         known = {f.name for f in fields(cls)}
         return replace(cfg, **{k: v for k, v in overrides.items() if k in known and v is not None})

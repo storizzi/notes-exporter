@@ -7,6 +7,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from . import __version__
 from .config import Config
 
 DEFAULT_ENV_VAR = "NOTES_EXPORTER_API_KEY"
@@ -256,6 +257,7 @@ def cmd_service(args, config: Config) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="notes-exporter", description="notes-exporter service (see SERVICE-API.md)")
+    p.add_argument("--version", action="version", version=f"notes-exporter {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
 
     s = sub.add_parser("serve", help="run the HTTP service")

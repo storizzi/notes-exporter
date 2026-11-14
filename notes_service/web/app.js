@@ -88,6 +88,8 @@ async function loadStatus() {
   add('Notes automation', auto + (askable ? ' — ask for access below, while at the Mac' : '')
     + (auto === 'denied' ? ' — turn it on in System Settings → Privacy & Security → Automation' : ''));
   $('#permission-row').hidden = !(askable && me.scopes.includes('admin'));
+  const v = await showVersion(false);
+  if (v) add('Version', versionLine(v));
   add('Full Disk Access', s.permission.full_disk_access === null ? 'unknown' : (s.permission.full_disk_access ? 'yes' : 'no (only needed for tags)'));
   $('#run-now').hidden = !!s.running_run_id || !me.scopes.includes('run');
   $('#run-cancel').hidden = !s.running_run_id || !me.scopes.includes('run');
@@ -102,6 +104,74 @@ async function loadStatus() {
   }
   if (s.running_run_id) watch(s.running_run_id);
   else if (!watching && runs[0]) watch(runs[0].id);
+}
+
+let versionInfo = null;
+
+function versionLine(v) {
+  let line = v.version;
+  if (v.restart_needed) line += ` — ${v.installed} installed, restart to use it`;
+  else if (v.update_available) line += ` — ${v.latest} available`;
+  else if (v.latest) line += ' — up to date';
+  if (v.check_error) line += ` (couldn’t check: ${v.check_error})`;
+  return line;
+}
+
+async function showVersion(refresh) {
+  try {
+    versionInfo = await api('GET', '/version' + (refresh ? '?refresh=true' : ''));
+  } catch (e) {
+    $('#update-note').textContent = e.message;
+    return null;
+  }
+  const v = versionInfo;
+  const admin = me.scopes.includes('admin');
+  $('#update-row').hidden = !admin;
+  $('#update-now').hidden = !(admin && v.update_available);
+  $('#update-now').disabled = !v.can_update;
+  $('#update-now').textContent = v.latest ? `Update to ${v.latest}` : 'Update';
+  $('#restart-now').hidden = !(admin && v.can_restart && v.restart_needed);
+  $('#update-note').textContent = v.update_available && !v.can_update && v.why_not ? v.why_not : '';
+  return v;
+}
+
+async function updateNow() {
+  const v = versionInfo;
+  if (!v || !v.latest || !confirm(`Update notes-exporter from ${v.version} to ${v.latest}? It restarts afterwards.`)) return;
+  $('#update-now').disabled = true;
+  $('#update-note').textContent = 'Updating…';
+  try {
+    const r = await api('POST', '/admin/update', { to: v.latest });
+    if (!r.ok) {
+      $('#update-note').textContent = `The update failed and was undone: ${r.reason}`;
+    } else {
+      $('#update-note').textContent = `Updated to ${r.to}. Restarting…`;
+      await restartNow(true);
+      return;
+    }
+  } catch (e) {
+    $('#update-note').textContent = e.message;
+  }
+  await loadStatus();
+}
+
+async function restartNow(quiet) {
+  if (quiet !== true && !confirm('Restart the notes-exporter service?')) return;
+  try {
+    await api('POST', '/admin/restart', {});
+  } catch (e) {
+    $('#update-note').textContent = e.message;
+    return;
+  }
+  $('#update-note').textContent = 'Restarting…';
+  for (let i = 0; i < 30; i += 1) {
+    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      const h = await fetch('/api/health');
+      if (h.ok) { await loadStatus(); $('#update-note').textContent = 'Restarted.'; return; }
+    } catch { /* still down */ }
+  }
+  $('#update-note').textContent = 'It hasn’t come back yet — reload the page in a moment.';
 }
 
 async function askPermission() {
@@ -317,6 +387,9 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#run-now').addEventListener('click', runNow);
   $('#run-cancel').addEventListener('click', cancelRun);
   $('#ask-permission').addEventListener('click', askPermission);
+  $('#update-now').addEventListener('click', updateNow);
+  $('#restart-now').addEventListener('click', () => restartNow(false));
+  $('#update-check').addEventListener('click', async () => { $('#update-note').textContent = 'Checking…'; const v = await showVersion(true); if (v) { $('#update-note').textContent = v.why_not && v.update_available ? v.why_not : ''; await loadStatus(); } });
   $('#settings-form').addEventListener('submit', saveSettings);
   $('#open-folder').addEventListener('click', openExportFolder);
   $('#user-form').addEventListener('submit', addUser);

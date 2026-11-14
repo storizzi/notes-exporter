@@ -1,5 +1,6 @@
 # Releases <!-- omit from toc -->
 
+- [Unreleased - 1.6.0 - Updates from a client](#unreleased---160---updates-from-a-client)
 - [14 November 2026 - Release 1.5.1 - Settings for Clients \& Writing Notes](#14-november-2026---release-151---settings-for-clients--writing-notes)
 - [11 November 2026 - Release 1.5.0 - Service API \& EPUB](#11-november-2026---release-150---service-api--epub)
 - [11 November 2026 - Release 1.4.0 - Nested Folders, Manifest \& Reliable Incremental Export](#11-november-2026---release-140---nested-folders-manifest--reliable-incremental-export)
@@ -10,6 +11,12 @@
 - [6 June 2025 - Release 0.3 - Automated Scheduling \& Output Improvements](#6-june-2025---release-03---automated-scheduling--output-improvements)
 - [10 June 2024 - Release 0.2 - Filename format / other file types](#10-june-2024---release-02---filename-format--other-file-types)
 - [8 December 2023 - Release 0.1 - Initial Release](#8-december-2023---release-01---initial-release)
+
+## Unreleased - 1.6.0 - Updates from a client
+
+* **Is it current?** `GET /api/version` (scope read) says which version is running, which is installed on disk, the newest release (the highest `vX.Y.Z` tag on `origin`, checked every `NOTES_SERVICE_UPDATE_CHECK_HOURS`), whether a restart is needed and whether it can update — and if not, why. The web page's status card shows it, with **Check for updates**.
+* **Update and restart from a client** (scope admin, so FunHoard can do it with the collection's key): `POST /api/admin/update` fast-forwards the checkout to a release, installs changed requirements and checks the new code in a fresh process; anything failing puts the checkout back as it was. `POST /api/admin/restart` exits so launchd starts the new version (only when launchd started it; not mid-export unless forced). Refused with a reason when there are local changes, unpushed commits, an export running or updates are turned off (`NOTES_SERVICE_ALLOW_UPDATE`). The web page's **Update to …** and **Restart** buttons do both. Logged in `updates.ndjson`. See [Updates](SERVICE-API.md#updates).
+* `notes-exporter --version`.
 
 ## 14 November 2026 - Release 1.5.1 - Settings for Clients & Writing Notes
 

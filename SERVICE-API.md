@@ -22,6 +22,7 @@ manifest version 1.
   - [Manifest, notes and files](#manifest-notes-and-files)
   - [Runs](#runs)
   - [Admin: settings, users, API keys](#admin-settings-users-api-keys)
+- [Updates](#updates)
 - [Formats and EPUB books](#formats-and-epub-books)
 - [Change detection for clients](#change-detection-for-clients)
 - [Security notes](#security-notes)
@@ -220,6 +221,13 @@ program runs and with which environment can only be set here, never over HTTP.
 | `NOTES_SERVICE_KEY_TOUCH_SECONDS` | `60` | how often an API key's `last_used_at` is updated |
 | `NOTES_SERVICE_DOCS` | `false` | serve the OpenAPI docs at `/docs` |
 | `NOTES_SERVICE_LAUNCHCTL` | `/bin/launchctl` | (tests) |
+| `NOTES_SERVICE_ALLOW_UPDATE` | `true` | let an admin client update the service ([Updates](#updates)) |
+| `NOTES_SERVICE_UPDATE_CHECK_HOURS` | `24` | how long the newest release is remembered |
+| `NOTES_SERVICE_UPDATE_CHECK_MIN_SECONDS` | `60` | the shortest gap between checks a client can ask for (`?refresh=true`) |
+| `NOTES_SERVICE_UPDATE_TIMEOUT_SECONDS` | `300` | fetch, `pip install` and the self-check, each |
+| `NOTES_SERVICE_UPDATE_GIT_TIMEOUT_SECONDS` | `30` | the other git commands |
+| `NOTES_SERVICE_UPDATE_PYTHON` | `<repo>/.venv/bin/python` | the Python that installs requirements and runs the self-check |
+| `NOTES_SERVICE_RESTART_DELAY_SECONDS` | `1` | how long after answering a restart the service exits |
 
 ## Authentication
 
@@ -276,6 +284,9 @@ errors: 422 with FastAPI's list form).
 | GET | `/runs/{id}/events` | read | the run's JSON Lines events (`?after=`) |
 | GET | `/runs/{id}/log` | read | the run's human output (text) |
 | POST | `/runs/{id}/cancel` | run | stop it |
+| GET | `/version` | read | running / installed / newest version, whether it can update ([Updates](#updates)) |
+| POST | `/admin/update` | admin | update to a release, checked and undone on failure |
+| POST | `/admin/restart` | admin | exit so launchd starts it again (202) |
 | GET, PUT | `/admin/settings` | admin | export settings |
 | GET, POST | `/admin/users` | admin | |
 | PATCH, DELETE | `/admin/users/{id}` | admin | role / password; remove |
@@ -496,6 +507,49 @@ the outcome — never the note's text. The work is `notes_write_helper.py` (pand
 `osascript notes_write.applescript`) in a subprocess with the exporter's clean environment
 (`NOTES_SERVICE_WRITER_HELPER`, `NOTES_SERVICE_WRITE_TIMEOUT_SECONDS`, default 180).
 
+## Updates
+
+The service runs from a git checkout, so a client — FunHoard's Versions & Updates page, or
+the web page's status card — can see whether it is current and, with an admin key, update and
+restart it. A release is a `vX.Y.Z` tag on the checkout's `origin`.
+
+`GET /api/version` (scope read; `?refresh=true` asks the remote now, at most every
+`NOTES_SERVICE_UPDATE_CHECK_MIN_SECONDS`; otherwise the answer is remembered for
+`NOTES_SERVICE_UPDATE_CHECK_HOURS`):
+
+```json
+{"version": "1.5.1", "installed": "1.6.0", "restart_needed": true,
+ "latest": "1.6.0", "latest_checked_at": "2026-11-14T16:20:00+00:00",
+ "update_available": false, "can_update": false, "why_not": "This is the newest release.",
+ "updating": false, "can_restart": true}
+```
+
+`version` is what is running, `installed` the `VERSION` on disk — they differ after an
+update until the service restarts (`restart_needed`). `check_error` appears when the remote
+couldn't be asked. `can_update` is false, with `why_not` saying why, when updates are off
+(`NOTES_SERVICE_ALLOW_UPDATE=false`), one is being made, an export is running, the service
+isn't a git checkout, tracked files have uncommitted changes, the branch holds commits the
+remote doesn't (or tracks none), the newest release isn't known or already installed, or it
+isn't a fast-forward of what is checked out. `can_restart` is true when launchd started the
+service, so it comes back after exiting.
+
+`POST /api/admin/update` `{"to": "1.6.0"}` (scope admin; `to` defaults to the newest):
+fetches the tags, fast-forwards to `v1.6.0` (`git merge --ff-only`, never a merge or a
+rebase), runs `pip install -r requirements.txt` when that file changed, then checks the new
+code in a fresh process — it imports and reports the version it should. Any failure puts the
+checkout back (`git reset --hard` to the previous commit, and the old requirements) and answers
+200 `{"ok": false, "rolled_back": true, "reason": "…", "from", "to"}`; success is
+`{"ok": true, "from": "1.5.1", "to": "1.6.0", "restart_needed": true, "requirements_changed": false}`.
+Refused before anything changes: 400 for a `to` that isn't `X.Y.Z`, 404 for a release that
+doesn't exist, 409 for the `why_not` reasons above or a version that isn't newer, 502 when the
+fetch fails. One update at a time. Each is logged in `updates.ndjson` in the state directory
+(who, from, to, result).
+
+`POST /api/admin/restart` `{"force": false}` (scope admin) answers 202 `{"restarting": true}`
+and exits `NOTES_SERVICE_RESTART_DELAY_SECONDS` later; the LaunchAgent's `KeepAlive` starts it
+again with the installed code. 409 when the service wasn't started by launchd (it wouldn't come
+back), while an update is being made, or while an export runs unless `force` (which stops it).
+
 ## Formats and EPUB books
 
 The service's `formats` setting is what every run produces. A client can ask a
@@ -547,7 +601,10 @@ Its tests never touch real Notes or the real export folder: the exporter is
 `HOME`, and the LaunchAgent tests use a fake `launchctl`. The permission tests
 use a fake `notes_permission.py` (`tests/service/fake_permission.py`) and the
 Keychain tests a fake `security` (`tests/service/fake_security.py`), so no test
-shows a macOS dialog or touches your Keychain.
+shows a macOS dialog or touches your Keychain. The update tests
+(`tests/service/test_service_updates.py`) run git, pip and the self-check through a fake
+runner over a pretend checkout, and restart through a fake exit — never the real checkout,
+the network or launchd.
 
 ### The live check (opt in)
 

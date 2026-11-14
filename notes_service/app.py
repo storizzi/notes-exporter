@@ -21,6 +21,7 @@ from .permissions import PermissionChecker, PermissionRequestBusy
 from .runs import RunBusy, RunError, RunManager, RunStore, read_events
 from .scheduler import Scheduler
 from .settings import CLIENT_READ_ONLY, RUN_FORMATS, SettingsError, SettingsStore
+from .updates import UpdateManager, UpdateRefused
 from .writes import WriteManager, WriteRefused
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -58,6 +59,7 @@ class Context:
             config, load_settings=self.settings.load, note_entry=self._note_entry,
             known_folder=self._known_folder, export_root=lambda: self.settings.load().export_root,
             running_run_id=lambda: self.manager.running_run_id, start_run=self._export_folder)
+        self.updates = UpdateManager(config, running_run_id=lambda: self.manager.running_run_id)
 
     def _note_entry(self, note_id: str) -> Optional[dict]:
         try:
@@ -154,6 +156,14 @@ class UserCreate(BaseModel):
 class UserPatch(BaseModel):
     password: Optional[str] = None
     role: Optional[Literal["admin", "reader"]] = None
+
+
+class UpdateRequest(BaseModel):
+    to: Optional[str] = None
+
+
+class RestartRequest(BaseModel):
+    force: bool = False
 
 
 class KeyCreate(BaseModel):
@@ -467,6 +477,27 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
         return {"run": ctx.manager.cancel(run_id)}
 
     # ---- settings (the `settings` scope: everything but where the export goes) ----
+    def _update_error(e: UpdateRefused):
+        return JSONResponse({"detail": str(e), **e.info}, status_code=e.status)
+
+    @app.get("/api/version")
+    def version(refresh: bool = False, p: Principal = Depends(need("read"))):
+        return ctx.updates.view(refresh=refresh)
+
+    @app.post("/api/admin/update")
+    def update(body: Optional[UpdateRequest] = None, p: Principal = Depends(need("admin"))):
+        try:
+            return ctx.updates.update((body.to if body else None), who=p.label)
+        except UpdateRefused as e:
+            return _update_error(e)
+
+    @app.post("/api/admin/restart", status_code=202)
+    def restart(body: Optional[RestartRequest] = None, p: Principal = Depends(need("admin"))):
+        try:
+            return ctx.updates.restart(force=bool(body and body.force), who=p.label)
+        except UpdateRefused as e:
+            return _update_error(e)
+
     @app.get("/api/settings")
     def get_client_settings(p: Principal = Depends(need("settings"))):
         return {"settings": ctx.settings.load().model_dump(), "read_only": list(CLIENT_READ_ONLY)}
