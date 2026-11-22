@@ -80,7 +80,7 @@ variable, and variables you inherit from a shell rc file change the run.
 | Code | Meaning | Manifest |
 |---|---|---|
 | 0 | Success | written, `status: "ok"` |
-| 1 | Could not start: bad option, no usable Python, missing dependencies, not macOS | not written |
+| 1 | Could not start: bad option, no usable Python, missing dependencies, not macOS, or the lock can't be created in the root directory (its permissions, a read-only drive, or macOS privacy settings refusing the program) | not written |
 | 2 | Partial: the run finished but some notes or steps failed | written, `status: "partial"`, failures in `skipped` |
 | 3 | Notes automation refused (-1743), or with `--non-interactive` macOS would ask | written if the export had started, `status: "failed"` |
 | 4 | Another export holds the lock on this root directory | not touched |
@@ -279,7 +279,10 @@ manifest is written, so a reader can re-point its records at the new path.
 One export runs per root directory. The script creates
 `<root>/.notes-exporter.lock/` (with the process id in `pid`) and removes
 it on exit. A second run exits with code 4 and touches nothing. A lock
-whose process no longer exists is taken over.
+whose process no longer exists is taken over. When the lock folder can't be created at all
+(the folder isn't writable, the drive is read-only, macOS refuses the program
+writes there), the run exits with code 1 and says why — code 4 means only
+that the lock really exists.
 
 ## macOS permissions
 

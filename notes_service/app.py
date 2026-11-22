@@ -20,7 +20,7 @@ from .exports import ExportReader, PathRefused, content_type, iter_file, parse_r
 from .permissions import PermissionChecker, PermissionRequestBusy
 from .runs import RunBusy, RunError, RunManager, RunStore, read_events
 from .scheduler import Scheduler
-from .settings import CLIENT_READ_ONLY, RUN_FORMATS, SettingsError, SettingsStore, export_root_problem
+from .settings import CLIENT_READ_ONLY, RUN_FORMATS, SettingsError, SettingsStore, export_root_state
 from .updates import UpdateManager, UpdateRefused
 from .writes import WriteManager, WriteRefused
 
@@ -158,6 +158,30 @@ class UserPatch(BaseModel):
     role: Optional[Literal["admin", "reader"]] = None
 
 
+class PermissionRequest(BaseModel):
+    wait: Optional[bool] = None
+
+
+class Refusal(Exception):
+    """An error answered as ``{detail, reason, …}`` (a plain HTTPException has only ``detail``)."""
+
+    def __init__(self, status: int, detail: str, reason: str, **info):
+        super().__init__(detail)
+        self.status, self.detail, self.reason, self.info = status, detail, reason, info
+
+
+def _settings_error(e: SettingsError) -> JSONResponse:
+    """422 for an invalid setting: the message as ``detail`` (as before), plus ``reason`` and ``field``."""
+    return JSONResponse({"detail": str(e), "reason": e.reason, "field": e.field}, status_code=422)
+
+
+def _run_summary(prefix: str, run: Optional[dict]) -> dict:
+    return {f"{prefix}_id": run["id"] if run else None,
+            f"{prefix}_status": run["status"] if run else None,
+            f"{prefix}_finished_at": run.get("finished_at") if run else None,
+            f"{prefix}_message": run.get("message") if run else None}
+
+
 class UpdateRequest(BaseModel):
     to: Optional[str] = None
 
@@ -203,6 +227,10 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
                   openapi_url="/openapi.json" if config.docs else None)
     app.state.ctx = ctx
 
+    @app.exception_handler(Refusal)
+    async def refusal(request: Request, e: Refusal):
+        return JSONResponse({"detail": e.detail, "reason": e.reason, **e.info}, status_code=e.status)
+
     @app.middleware("http")
     async def guard(request: Request, call_next):
         names = {k.lower() for k in request.query_params.keys()}
@@ -235,7 +263,8 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
     def need(scope: str):
         def dep(p: Principal = Depends(principal)) -> Principal:
             if scope not in p.scopes:
-                raise HTTPException(403, f"this needs the {scope!r} scope")
+                raise Refusal(403, f"this needs the {scope!r} scope",
+                              "not_admin" if scope == "admin" else "scope", scope=scope)
             return p
         return dep
 
@@ -312,17 +341,21 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
         last = ctx.runs.latest(finished_only=True)
         nxt = ctx.scheduler.next_run_at()
         root = settings.export_root
-        root_problem = export_root_problem(root)
         return {
             "running_run_id": ctx.manager.running_run_id,
             "last_run": last,
+            # The same as flat fields, so a client needn't read the history: the last finished run,
+            # the last that failed and the last that succeeded (ok or partial). A failure is
+            # still current when last_failed_run_id == last_run_id.
+            **_run_summary("last_run", last),
+            **_run_summary("last_failed_run", ctx.runs.latest_with_status("failed")),
+            **_run_summary("last_success_run", ctx.runs.latest_with_status("ok", "partial")),
             "next_run_at": nxt.isoformat(timespec="seconds") if nxt else None,
             "schedule": settings.schedule.model_dump(),
             "export_root": root,
-            "export_root_ok": not root_problem and os.path.isdir(root) and os.access(root, os.W_OK),
-            "export_root_problem": root_problem,
+            **export_root_state(root),
             "manifest_present": os.path.isfile(os.path.join(root, "manifest.json")),
-            "permission": ctx.permissions.get(),
+            "permission": dict(ctx.permissions.get(), requesting=ctx.permissions.requesting),
             "formats": settings.formats,
             "epub_books": settings.epub_books,
             "version": __version__,
@@ -500,9 +533,14 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
         except UpdateRefused as e:
             return _update_error(e)
 
+    def _client_settings(settings) -> dict:
+        # The export folder's state beside the settings (not in them), so they can be sent back as they are.
+        return {"settings": settings.model_dump(), "read_only": list(CLIENT_READ_ONLY),
+                **export_root_state(settings.export_root)}
+
     @app.get("/api/settings")
     def get_client_settings(p: Principal = Depends(need("settings"))):
-        return {"settings": ctx.settings.load().model_dump(), "read_only": list(CLIENT_READ_ONLY)}
+        return _client_settings(ctx.settings.load())
 
     @app.put("/api/settings")
     async def put_client_settings(request: Request, p: Principal = Depends(need("settings"))):
@@ -515,19 +553,23 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
         current = ctx.settings.load().model_dump()
         moved = [k for k in CLIENT_READ_ONLY if k in changes and changes[k] != current.get(k)]
         if moved and "admin" not in p.scopes:
-            raise HTTPException(403, f"{', '.join(moved)} can only be changed by an admin, on the service's "
-                                     "Settings page")
+            raise Refusal(403, f"{', '.join(moved)} can only be changed by an admin, on the service's "
+                               "Settings page", "not_admin", field=moved[0], fields=moved)
         changes = {k: v for k, v in changes.items() if k not in CLIENT_READ_ONLY or "admin" in p.scopes}
         try:
-            saved = ctx.settings.update(changes).model_dump()
+            saved = ctx.settings.update(changes, check_root=True)
         except SettingsError as e:
-            raise HTTPException(422, str(e))
-        return {"settings": saved, "read_only": list(CLIENT_READ_ONLY)}
+            return _settings_error(e)
+        return _client_settings(saved)
 
     # ---- admin ----
+    def _admin_settings(settings) -> dict:
+        # The settings plus how the export folder is now (DERIVED_FIELDS: dropped when sent back).
+        return {**settings.model_dump(), **export_root_state(settings.export_root)}
+
     @app.get("/api/admin/settings")
     def get_settings(p: Principal = Depends(need("admin"))):
-        return ctx.settings.load().model_dump()
+        return _admin_settings(ctx.settings.load())
 
     @app.put("/api/admin/settings")
     async def put_settings(request: Request, p: Principal = Depends(need("admin"))):
@@ -538,9 +580,9 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
         if not isinstance(changes, dict):
             raise HTTPException(400, "send the settings as a JSON object")
         try:
-            return ctx.settings.update(changes).model_dump()
+            return _admin_settings(ctx.settings.update(changes, check_root=True))
         except SettingsError as e:
-            raise HTTPException(422, str(e))
+            return _settings_error(e)
 
     @app.post("/api/admin/export-folder/open")
     def open_export_folder(request: Request, p: Principal = Depends(need("admin"))):
@@ -559,17 +601,29 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
             raise HTTPException(500, f"the Finder couldn't open {root}: {(r.stderr or '').strip() or r.returncode}")
         return {"opened": root, "on_this_mac": _is_loopback(request)}
 
+    def _permission_view(refresh: bool = False) -> dict:
+        return dict(ctx.permissions.get(refresh=refresh), requesting=ctx.permissions.requesting,
+                    last_request=ctx.permissions.last_request)
+
     @app.get("/api/admin/permission")
     def get_permission(refresh: bool = False, p: Principal = Depends(need("admin"))):
-        return dict(ctx.permissions.get(refresh=refresh), requesting=ctx.permissions.requesting)
+        return _permission_view(refresh)
 
     @app.post("/api/admin/permission/request")
-    def request_permission(p: Principal = Depends(need("admin"))):
-        # A sync endpoint, so it waits in the thread pool while macOS shows its dialog.
+    def request_permission(body: Optional[PermissionRequest] = None, wait: Optional[bool] = None,
+                           p: Principal = Depends(need("admin"))):
+        # Waiting (the default, as before 1.6.1) is a sync endpoint, so it waits in the thread pool
+        # while macOS shows its dialog. ?wait=false (or {"wait": false}) answers 202 at once; the
+        # permission then says requesting: true until macOS answers.
+        if wait is None:
+            wait = body.wait if body and body.wait is not None else True
         try:
+            if not wait:
+                ctx.permissions.start_request()
+                return JSONResponse(_permission_view(), status_code=202)
             result = ctx.permissions.request()
         except PermissionRequestBusy as e:
-            raise HTTPException(409, str(e))
+            raise Refusal(409, str(e), "busy")
         return {k: result.get(k) for k in ("automation", "full_disk_access", "checked_at")}
 
     @app.get("/api/admin/users")

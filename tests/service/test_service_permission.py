@@ -172,3 +172,63 @@ def test_permission_request_busy(perm_service):
     gate.set()
     t.join(10)
     assert first[0].status_code == 200 and state["asked"] == 1
+
+
+def _wait_until(cond, timeout=5):
+    end = time.time() + timeout
+    while time.time() < end:
+        if cond():
+            return True
+        time.sleep(0.02)
+    return cond()
+
+
+@pytest.mark.parametrize("how", ["query", "body"])
+def test_permission_request_without_waiting(perm_service, how):
+    """?wait=false (or {"wait": false}): 202 at once, requesting: true until macOS answers."""
+    client, ctx, state, gate = perm_service
+    admin = {"Authorization": f"Bearer {make_key(ctx, ['read', 'run', 'admin'])}"}
+    assert client.get("/api/admin/permission", headers=admin).json()["last_request"] is None
+    gate.clear()
+    if how == "query":
+        r = client.post("/api/admin/permission/request?wait=false", headers=admin)
+    else:
+        r = client.post("/api/admin/permission/request", headers=admin, json={"wait": False})
+    assert r.status_code == 202
+    body = r.json()
+    assert body["requesting"] is True and body["automation"] == "prompt"
+    assert body["last_request"]["started_at"] and body["last_request"]["finished_at"] is None
+    assert client.get("/api/admin/permission", headers=admin).json()["requesting"] is True
+    assert client.get("/api/status", headers=admin).json()["permission"]["requesting"] is True
+    # one at a time, waiting or not
+    assert client.post("/api/admin/permission/request?wait=false", headers=admin).status_code == 409
+    r = client.post("/api/admin/permission/request", headers=admin)
+    assert r.status_code == 409 and r.json()["reason"] == "busy"
+    gate.set()
+    assert _wait_until(lambda: not ctx.permissions.requesting)
+    got = client.get("/api/admin/permission", headers=admin).json()
+    assert got["requesting"] is False and got["automation"] == "allowed"
+    assert got["last_request"]["asked"] == "allowed" and got["last_request"]["finished_at"]
+    assert state["asked"] == 1
+
+
+def test_permission_request_waits_by_default(perm_service):
+    client, ctx, state, gate = perm_service
+    admin = {"Authorization": f"Bearer {make_key(ctx, ['read', 'run', 'admin'])}"}
+    for kw in ({}, {"params": {"wait": "true"}}, {"json": {"wait": True}}, {"json": {}}):
+        r = client.post("/api/admin/permission/request", headers=admin, **kw)
+        assert r.status_code == 200 and r.json()["automation"] == "allowed", kw
+        assert set(r.json()) == {"automation", "full_disk_access", "checked_at"}
+    assert state["asked"] == 4
+
+
+def test_background_request_reports_a_failing_requester(make_config):
+    def requester():
+        raise RuntimeError("boom")
+
+    checker = PermissionChecker(make_config(), automation=lambda: "prompt", disk=lambda: None, requester=requester)
+    checker.start_request().join(5)
+    assert not checker.requesting and checker.last_request["asked"] == "unknown(RuntimeError)"
+    with pytest.raises(RuntimeError):
+        checker.request()  # waiting, the error still reaches the caller
+    assert not checker.requesting

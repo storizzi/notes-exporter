@@ -22,6 +22,7 @@ manifest version 1.
   - [Manifest, notes and files](#manifest-notes-and-files)
   - [Runs](#runs)
   - [Admin: settings, users, API keys](#admin-settings-users-api-keys)
+  - [Refusal reasons](#refusal-reasons)
 - [Updates](#updates)
 - [Formats and EPUB books](#formats-and-epub-books)
 - [Change detection for clients](#change-detection-for-clients)
@@ -176,6 +177,19 @@ service's settings (for example daily at `00:13`).
   A refused permission can't be asked for again: re-enable it in *System
   Settings > Privacy & Security > Automation* (the Python or Terminal entry,
   **Notes** ticked).
+* **Writing to the export folder.** A folder the service's Python may not write
+  to — on another drive, in Documents / Desktop / Downloads, or anywhere macOS's
+  privacy settings (TCC) guard — fails with *Operation not permitted* even when
+  its permission bits allow it. `GET /api/status` probes it by creating and
+  removing a hidden empty file (`.notes-exporter-probe-…`) in the folder, or in
+  the nearest folder above it before the first export made it, and reports
+  `export_root_access`: `ok`, `denied` (macOS refuses it: allow the Python named
+  in `export_root_problem` — the real path of the service's interpreter — in
+  *System Settings → Privacy & Security → Full Disk Access*, or *Files and
+  Folders* (Removable Volumes / Network Volumes) for a drive, then restart the
+  service), `not_writable` (the folder's permissions, or a read-only drive),
+  `missing` (its drive isn't connected) or `unknown`. A run into a folder that is
+  `denied`, `not_writable` or `missing` fails at once saying so.
 * **Full Disk Access (only for tags).** `--tags` reads Notes' database, which
   needs Full Disk Access for the same Python. `permission.full_disk_access` is
   `true` / `false` (checked by opening the TCC database read-only, which never
@@ -263,7 +277,8 @@ one without the scope an endpoint needs: **403**.
 ## Endpoints
 
 JSON unless noted, all under `/api`. Errors are `{"detail": "…"}` (validation
-errors: 422 with FastAPI's list form).
+errors: 422 with FastAPI's list form); some also carry a machine-readable
+`reason` ([Refusal reasons](#refusal-reasons)).
 
 | Method | Path | Scope | |
 |---|---|---|---|
@@ -320,10 +335,21 @@ GET /api/status
   "next_run_at": "2026-11-12T00:13:00+00:00",   // null when not scheduled
   "schedule": {"enabled": true, "interval_minutes": null, "daily_at": "00:13"},
   "export_root": "/Users/…/AppleNotesExport",
-  "export_root_ok": true,                        // exists and writable
-  "export_root_problem": null,                   // or why not, e.g. its drive isn't connected
+  "export_root_ok": true,                        // exists and a file can be created in it
+  "export_root_problem": null,                   // or why not, in words: its drive isn't connected, macOS refuses it…
+  "export_root_access": "ok",                    // 1.6.1: ok | denied | not_writable | missing | unknown
+  "export_root_reason": null,                    // 1.6.1: drive_not_mounted | not_a_folder | not_writable | access_denied | probe_failed
   "manifest_present": true,
-  "permission": {"automation": "allowed", "full_disk_access": false, "checked_at": "…"},
+  "permission": {"automation": "allowed", "full_disk_access": false, "checked_at": "…",
+                 "requesting": false},           // 1.6.1: a permission request is waiting for macOS
+  // 1.6.1: the last runs without reading the history. Each prefix has _id, _status,
+  // _finished_at and _message (all null when there is no such run).
+  "last_run_id": "5c0f…", "last_run_status": "ok", "last_run_finished_at": "…", "last_run_message": null,
+  "last_failed_run_id": "9a1e…",                 // the newest run that ended failed (not cancelled)
+  "last_failed_run_status": "failed", "last_failed_run_finished_at": "…",
+  "last_failed_run_message": "cannot create the lock in …",
+  "last_success_run_id": "5c0f…",                // the newest ok or partial run
+  "last_success_run_status": "ok", "last_success_run_finished_at": "…", "last_success_run_message": null,
   "formats": ["html", "md"],                     // the settings' formats
   "epub_books": "none",
   "version": "1.5.0"
@@ -425,14 +451,25 @@ settings as [below](#admin-settings-users-api-keys), and `read_only`, the
 fields this scope can't change (`["export_root"]`). `PUT /api/settings` merges
 the fields you send, as the admin endpoint does, and answers the same shape; 422
 for an invalid value or an unknown field. Sending `export_root` back unchanged
-is fine; a different one is **403** unless the key also has `admin` — a client
+is fine; a different one is **403** `reason: "not_admin"` unless the key also has `admin` — a client
 that tunes the export never decides where on the Mac it is written. This is how
 FunHoard shows and changes the service's settings on its collection page.
+Since 1.6.1 both answers also carry `export_root_ok`, `export_root_problem`,
+`export_root_access` and `export_root_reason` (as in [Status](#status)) beside
+`settings`, not inside it.
 
 ### Admin: settings, users, API keys
 
-`GET /api/admin/settings` → the settings; `PUT` merges the fields you send
-(422 with a message for invalid ones; unknown fields are refused):
+`GET /api/admin/settings` → the settings, plus (1.6.1) `export_root_ok`,
+`export_root_problem`, `export_root_access` and `export_root_reason` as in
+[Status](#status); `PUT` merges the fields you send and answers the same
+(422 `{detail, reason, field}` for invalid ones; unknown fields are refused).
+Those four fields may be sent back with the rest: they are ignored, never
+saved. A **new** `export_root` must be writable now — its drive connected and
+the folder (or, before the first export, the nearest folder above it) one the
+service can create a file in — else 422 with `reason` `drive_not_mounted`,
+`not_a_folder`, `not_writable` or `access_denied`. An unchanged one is never
+refused, so other settings can be saved while its drive is away.
 
 | Field | Default | |
 |---|---|---|
@@ -459,8 +496,43 @@ full_disk_access, checked_at, requesting}` (never prompts).
 `POST /api/admin/permission/request` makes macOS show its "wants to control
 Notes" dialog on the Mac and waits for the answer (up to
 `NOTES_SERVICE_PERMISSION_REQUEST_TIMEOUT_SECONDS`), then checks again and
-answers `{automation, full_disk_access, checked_at}`; 409 while another request
+answers `{automation, full_disk_access, checked_at}`; 409 `reason: "busy"` while another request
 is waiting. Only call it when someone is at the Mac.
+
+Without waiting (1.6.1): `POST /api/admin/permission/request?wait=false` (or
+the body `{"wait": false}`) starts the request and answers **202** at once with
+the permission as `GET /api/admin/permission` gives it — `requesting: true`.
+Poll `GET /api/admin/permission` (or `/api/status`'s `permission.requesting`)
+until `requesting` is false; `automation` is then macOS's answer.
+`GET /api/admin/permission` also has `last_request`: `{started_at,
+finished_at, asked}` of the latest request (`finished_at` / `asked` null while
+it waits), or null before the first. Waiting stays the default, so older
+clients behave as before.
+
+### Refusal reasons
+
+Since 1.6.1 these refusals carry a machine-readable `reason` next to `detail`
+(the message, unchanged), so a client needn't parse the words:
+
+| Status | `reason` | Also | When |
+|---|---|---|---|
+| 403 | `not_admin` | `scope: "admin"` | an `/api/admin/…` endpoint without the admin scope |
+| 403 | `not_admin` | `field`, `fields` | `PUT /api/settings` changing `export_root` (or `allow_writes`) without admin |
+| 403 | `scope` | `scope` | any other endpoint without its scope |
+| 409 | `busy` | | `POST /api/admin/permission/request` while another request waits |
+| 422 | `not_absolute` | `field: "export_root"` | `export_root` isn't an absolute path |
+| 422 | `inside_state_dir` | `field: "export_root"` | it contains, or is inside, the service's state directory |
+| 422 | `drive_not_mounted` | `field: "export_root"` | a new one is on a drive (`/Volumes/<drive>`) that isn't connected |
+| 422 | `not_a_folder` | `field: "export_root"` | a new one (or the folder above it) is a file |
+| 422 | `not_writable` | `field: "export_root"` | a new one's permissions, or a read-only drive, don't allow writing |
+| 422 | `access_denied` | `field: "export_root"` | macOS's privacy settings refuse the service there (Full Disk Access / Files and Folders) |
+| 422 | `unknown_settings` | `field: null` | a field that isn't a setting |
+| 422 | `invalid` | `field` (or null) | any other invalid value |
+
+The 422s are from `PUT /api/admin/settings` and `PUT /api/settings`; `field`
+names the setting when there is one. `/api/status`'s `export_root_reason` uses
+the same `export_root` reasons, plus `probe_failed` (the check itself failed;
+never refused for).
 
 Export folder: `POST /api/admin/export-folder/open` shows the saved export
 folder in the Finder (Settings → Show in Finder) — always on the Mac running the

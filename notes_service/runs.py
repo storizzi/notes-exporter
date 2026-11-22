@@ -18,7 +18,7 @@ from typing import Callable, List, Optional
 
 from .config import Config
 from .db import Database
-from .settings import (SettingsStore, export_root_problem, _clean_names, effective_epub_books, exporter_args, exporter_env,
+from .settings import (REFUSING_REASONS, SettingsStore, export_root_check, _clean_names, effective_epub_books, exporter_args, exporter_env,
                        produced_formats)
 
 STATUSES = ("queued", "running", "ok", "partial", "failed", "cancelled")
@@ -185,6 +185,12 @@ class RunStore:
                           FINISHED if finished_only else ())
         return self.to_public(row)
 
+    def latest_with_status(self, *statuses: str) -> Optional[dict]:
+        """The newest run with one of these statuses, or None."""
+        row = self.db.one(f"SELECT * FROM runs WHERE status IN ({','.join('?' * len(statuses))}) "
+                          "ORDER BY seq DESC LIMIT 1", statuses)
+        return self.to_public(row)
+
     def active(self) -> Optional[dict]:
         return self.to_public(self.db.one("SELECT * FROM runs WHERE status IN ('queued','running') "
                                           "ORDER BY seq DESC LIMIT 1"))
@@ -270,9 +276,9 @@ class RunManager:
                 args = exporter_args(self.config, settings, json_log=events, mode=mode,
                                      folders=folders, accounts=accounts, formats=formats,
                                      epub_books=epub_books)
-                problem = export_root_problem(settings.export_root)
-                if problem:
-                    raise ValueError(problem)
+                check = export_root_check(settings.export_root)
+                if check["reason"] in REFUSING_REASONS:
+                    raise ValueError(check["problem"])
                 Path(settings.export_root).mkdir(parents=True, exist_ok=True)
                 events.touch()
                 log = open(self.store.log_path(run["id"]), "ab")

@@ -12,7 +12,9 @@ Results are cached for ``permission_cache_seconds``.
 ``request()`` is the one call that may prompt: it runs the helper with
 ``--ask`` so macOS shows its "wants to control Notes" dialog on the Mac. The
 grant belongs to the process that asks, which is why the service asks itself
-rather than leaving it to a terminal. One request at a time.
+rather than leaving it to a terminal. One request at a time. ``start_request()``
+does the same in a thread and returns at once; ``requesting`` stays true, and
+``last_request`` says how the latest one went, until macOS answers.
 """
 
 import os
@@ -73,6 +75,11 @@ class PermissionChecker:
         self._lock = threading.Lock()
         self._cached = None
         self._at = 0.0
+        self._last_request: Optional[dict] = None
+
+    @staticmethod
+    def _now() -> str:
+        return time.strftime("%Y-%m-%dT%H:%M:%S%z")
 
     def get(self, refresh: bool = False) -> dict:
         if not self.config.permission_check:
@@ -90,18 +97,45 @@ class PermissionChecker:
     def requesting(self) -> bool:
         return self._request_lock.locked()
 
-    def request(self) -> dict:
-        """Ask macOS for automation of Notes, then check again. Raises PermissionRequestBusy."""
+    @property
+    def last_request(self) -> Optional[dict]:
+        """``{started_at, finished_at, asked}`` of the latest request (finished_at / asked None
+        while it waits), or None before the first."""
+        return dict(self._last_request) if self._last_request else None
+
+    def _acquire(self) -> None:
         if not self._request_lock.acquire(blocking=False):
             raise PermissionRequestBusy("a permission request is already waiting for an answer on the Mac")
+        self._last_request = {"started_at": self._now(), "finished_at": None, "asked": None}
+
+    def _ask_and_release(self, in_thread: bool = False) -> dict:
+        asked = None
         try:
-            asked = self._requester()
+            try:
+                asked = self._requester()
+            except Exception as e:
+                if not in_thread:
+                    raise
+                asked = f"unknown({e.__class__.__name__})"  # a thread has nobody to raise to
             result = self.get(refresh=True) if self.config.permission_check else \
-                {"automation": asked, "full_disk_access": self._disk(),
-                 "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+                {"automation": asked, "full_disk_access": self._disk(), "checked_at": self._now()}
             return dict(result, asked=asked)
         finally:
+            self._last_request = dict(self._last_request or {}, finished_at=self._now(), asked=asked)
             self._request_lock.release()
+
+    def request(self) -> dict:
+        """Ask macOS for automation of Notes, then check again. Raises PermissionRequestBusy."""
+        self._acquire()
+        return self._ask_and_release()
+
+    def start_request(self) -> threading.Thread:
+        """Ask without waiting: the request runs in a thread; ``requesting`` is true until macOS
+        answers (or the request times out). Raises PermissionRequestBusy."""
+        self._acquire()
+        t = threading.Thread(target=self._ask_and_release, args=(True,), daemon=True, name="permission-request")
+        t.start()
+        return t
 
     def note_run_state(self, state: Optional[str]) -> None:
         """A run's own permission event is fresher than the cache."""
