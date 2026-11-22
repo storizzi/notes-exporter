@@ -340,7 +340,20 @@ mkdir -p "$NOTES_EXPORT_ROOT_DIR" || fail_early $EXIT_USAGE "cannot create $NOTE
 NOTES_EXPORT_ROOT_DIR="${NOTES_EXPORT_ROOT_DIR:A}"
 export NOTES_EXPORT_ROOT_DIR
 LOCK_DIR="$NOTES_EXPORT_ROOT_DIR/.notes-exporter.lock"
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+if ! lock_error="$(mkdir "$LOCK_DIR" 2>&1)"; then
+    if [[ ! -d "$LOCK_DIR" ]]; then
+        # The mkdir failed for another reason than an existing lock: say what it was
+        # (a TCC refusal once showed up as "another export (pid unknown)").
+        lock_error="${lock_error##*: }"
+        [[ -n "$lock_error" ]] || lock_error="mkdir failed"
+        lock_hint=""
+        case "$lock_error" in
+            *"not permitted"*) lock_hint=" — macOS is refusing it: the service (or Terminal) may need Full Disk Access, or Files and Folders for a drive (System Settings → Privacy & Security)" ;;
+            *"Permission denied"*) lock_hint=" — check the folder's permissions" ;;
+            *"Read-only"*) lock_hint=" — the drive is read-only" ;;
+        esac
+        fail_early $EXIT_USAGE "cannot create the lock in $NOTES_EXPORT_ROOT_DIR: ${lock_error}${lock_hint}"
+    fi
     other_pid="$(cat "$LOCK_DIR/pid" 2>/dev/null)"
     if [[ -n "$other_pid" ]] && ! kill -0 "$other_pid" 2>/dev/null; then
         echo "Removing stale lock left by process $other_pid" >&2

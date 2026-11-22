@@ -1,9 +1,12 @@
 """Export settings (``service.json``) and how they become exporter options."""
 
+import errno
 import json
 import os
 import re
+import sys
 import tempfile
+import uuid
 import threading
 from pathlib import Path
 from typing import List, Literal, Optional
@@ -23,8 +26,22 @@ CLIENT_READ_ONLY = ("export_root", "allow_writes")
 _HHMM = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 
+# Fields GET /api/admin/settings adds to the settings (how the export folder is right now). A
+# client that sends the settings back whole may include them: they are dropped, never saved.
+# export_root_check reasons that refuse a new export_root and stop a run before it starts
+# (probe_failed doesn't: an unexplained error is reported, never trusted to block an export).
+REFUSING_REASONS = ("drive_not_mounted", "not_a_folder", "not_writable", "access_denied")
+DERIVED_FIELDS = ("export_root_ok", "export_root_problem", "export_root_access", "export_root_reason")
+
+
 class SettingsError(ValueError):
-    pass
+    """An invalid setting. ``reason`` is machine-readable (SERVICE-API.md "Refusals"),
+    ``field`` the setting it is about (None when it isn't one field)."""
+
+    def __init__(self, message: str, reason: str = "invalid", field: Optional[str] = None):
+        super().__init__(message)
+        self.reason = reason
+        self.field = field
 
 
 def _clean_names(values: List[str], what: str) -> List[str]:
@@ -112,15 +129,10 @@ class Settings(BaseModel):
 
 
 _ismount = os.path.ismount  # tests replace it
+_PROBE_PREFIX = ".notes-exporter-probe-"
 
 
-def export_root_problem(root: str) -> Optional[str]:
-    """Why an export can't be written to ``root`` now, else None.
-
-    A root on another drive (``/Volumes/<name>/…``) needs that drive mounted: otherwise
-    creating the folder would make ``/Volumes/<name>`` on the internal disk and the whole
-    export would quietly be written there instead.
-    """
+def _drive_problem(root: str) -> Optional[str]:
     parts = Path(os.path.expanduser(str(root))).parts
     if len(parts) > 2 and parts[0] == "/" and parts[1] == "Volumes":
         volume = os.path.join("/Volumes", parts[2])
@@ -129,6 +141,107 @@ def export_root_problem(root: str) -> Optional[str]:
         if not _ismount(volume):
             return f"the drive \u201c{parts[2]}\u201d isn't connected ({volume} is not mounted)"
     return None
+
+
+def service_python() -> str:
+    """The program macOS's privacy settings must allow: the service's own Python, as a real path
+    (a venv's python is a symlink, and System Settings lists the file it points at)."""
+    return os.path.realpath(sys.executable)
+
+
+def _probe_dir(root: str) -> Optional[str]:
+    """Where an export would first write: the root, or (before the first export) the nearest folder
+    above it that exists, since the export creates the rest."""
+    path = os.path.expanduser(str(root))
+    while path and not os.path.lexists(path):
+        parent = os.path.dirname(path)
+        if parent == path:
+            return None
+        path = parent
+    return path or None
+
+
+def _write_probe(folder: str) -> Optional[OSError]:
+    """Create and remove a hidden empty file in ``folder``; the error, or None when it worked."""
+    name = os.path.join(folder, f"{_PROBE_PREFIX}{os.getpid()}-{uuid.uuid4().hex[:8]}")
+    try:
+        fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except OSError as e:
+        return e
+    os.close(fd)
+    try:
+        os.unlink(name)
+    except OSError:
+        pass
+    return None
+
+
+def export_root_check(root: str) -> dict:
+    """How the export folder is now: ``{access, reason, problem}``.
+
+    ``access`` is ``ok`` (a file can be created there), ``denied`` (macOS refuses the service —
+    EPERM, or EACCES where the permission bits allow it: privacy settings, TCC), ``not_writable``
+    (the folder's permissions or a read-only drive), ``missing`` (its drive isn't connected) or
+    ``unknown``. ``reason`` is the machine-readable refusal (``drive_not_mounted``,
+    ``not_a_folder``, ``not_writable``, ``access_denied``, ``probe_failed``) or None, ``problem``
+    the same in words or None. Probed by creating and removing a hidden file, in the root or —
+    before the first export made it — the nearest folder above it.
+    """
+    drive = _drive_problem(root)
+    if drive:
+        return {"access": "missing", "reason": "drive_not_mounted", "problem": drive}
+    path = os.path.expanduser(str(root))
+    if os.path.lexists(path) and not os.path.isdir(path):
+        return {"access": "not_writable", "reason": "not_a_folder",
+                "problem": f"{path} is a file, not a folder"}
+    folder = _probe_dir(path)
+    if not folder:
+        return {"access": "unknown", "reason": "probe_failed", "problem": f"no folder above {path} exists"}
+    if not os.path.isdir(folder):
+        return {"access": "not_writable", "reason": "not_a_folder",
+                "problem": f"{folder} is a file, not a folder"}
+    err = _write_probe(folder)
+    if err is None:
+        return {"access": "ok", "reason": None, "problem": None}
+    why = err.strerror or err.__class__.__name__
+    if err.errno == errno.EROFS:
+        return {"access": "not_writable", "reason": "not_writable",
+                "problem": f"the service can't write to {folder}: {why} (the drive is read-only)"}
+    if err.errno == errno.EPERM or (err.errno == errno.EACCES and os.access(folder, os.W_OK)):
+        return {"access": "denied", "reason": "access_denied",
+                "problem": (f"the service can't write to {folder}: {why} \u2014 macOS is refusing it. Allow "
+                            f"{service_python()} in System Settings \u2192 Privacy & Security \u2192 Full Disk "
+                            f"Access (or Files and Folders, for a drive: Removable Volumes / Network Volumes), "
+                            f"then restart the service")}
+    if err.errno == errno.EACCES:
+        return {"access": "not_writable", "reason": "not_writable",
+                "problem": f"the service can't write to {folder}: {why} (check the folder's permissions)"}
+    return {"access": "unknown", "reason": "probe_failed",
+            "problem": f"couldn't check that {folder} can be written: {why}"}
+
+
+def export_root_problem(root: str) -> Optional[str]:
+    """Why an export can't be written to ``root`` now, else None.
+
+    A root on another drive (``/Volumes/<name>/…``) needs that drive mounted: otherwise
+    creating the folder would make ``/Volumes/<name>`` on the internal disk and the whole
+    export would quietly be written there instead. Only the drive is checked here (no disk
+    writes); ``export_root_check`` also probes whether the folder can be written.
+    """
+    return _drive_problem(root)
+
+
+def export_root_state(root: str) -> dict:
+    """The fields /api/status and the settings endpoints report about the export folder:
+    ``export_root_ok`` (exists and a file can be created in it), ``export_root_problem`` (why not,
+    or None — a folder the first export hasn't made yet is no problem), ``export_root_access``
+    (``export_root_check``'s ``access``) and ``export_root_reason``."""
+    check = export_root_check(root)
+    path = os.path.expanduser(str(root))
+    return {"export_root_ok": check["access"] == "ok" and os.path.isdir(path),
+            "export_root_problem": check["problem"],
+            "export_root_access": check["access"],
+            "export_root_reason": check["reason"]}
 
 
 def default_export_root() -> str:
@@ -166,18 +279,27 @@ class SettingsStore:
     def validate(self, settings: Settings) -> Settings:
         root = Path(os.path.expanduser(settings.export_root))
         if not root.is_absolute():
-            raise SettingsError("export_root must be an absolute path")
+            raise SettingsError("export_root must be an absolute path", "not_absolute", "export_root")
         home = self.config.home.resolve()
         resolved = root.resolve()
         if _inside(resolved, home) or _inside(home, resolved):
-            raise SettingsError("export_root may not contain, or be inside, the service's state directory")
+            raise SettingsError("export_root may not contain, or be inside, the service's state directory",
+                                "inside_state_dir", "export_root")
         if self.config.min_interval_minutes and settings.schedule.interval_minutes is not None \
                 and settings.schedule.interval_minutes < self.config.min_interval_minutes:
-            raise SettingsError(f"schedule.interval_minutes must be at least {self.config.min_interval_minutes}")
+            raise SettingsError(f"schedule.interval_minutes must be at least {self.config.min_interval_minutes}",
+                                "invalid", "schedule")
         return settings.model_copy(update={"export_root": str(root)})
 
-    def update(self, changes: dict) -> Settings:
-        """Merge ``changes`` (any subset of the fields) into the stored settings."""
+    def update(self, changes: dict, check_root: bool = False) -> Settings:
+        """Merge ``changes`` (any subset of the fields) into the stored settings.
+
+        ``check_root`` (the HTTP endpoints): a *new* ``export_root`` must also be writable now —
+        its drive connected, the folder (or the nearest one above it) writable by the service —
+        else SettingsError with ``export_root_check``'s reason. An unchanged one is never refused,
+        so other settings can be saved while the drive is away.
+        """
+        changes = {k: v for k, v in changes.items() if k not in DERIVED_FIELDS}
         current = self.load().model_dump()
         if "schedule" in changes and isinstance(changes["schedule"], dict):
             merged_schedule = dict(current["schedule"])
@@ -185,13 +307,20 @@ class SettingsStore:
             changes = dict(changes, schedule=merged_schedule)
         unknown = set(changes) - set(Settings.model_fields)
         if unknown:
-            raise SettingsError(f"unknown settings: {sorted(unknown)}")
+            raise SettingsError(f"unknown settings: {sorted(unknown)}", "unknown_settings")
+        old_root = current["export_root"]
         current.update(changes)
         try:
             settings = Settings.model_validate(current)
         except ValidationError as e:
-            raise SettingsError("; ".join(err["msg"].removeprefix("Value error, ") for err in e.errors()))
+            fields = {str(err["loc"][0]) for err in e.errors() if err.get("loc")}
+            raise SettingsError("; ".join(err["msg"].removeprefix("Value error, ") for err in e.errors()),
+                                "invalid", fields.pop() if len(fields) == 1 else None)
         settings = self.validate(settings)
+        if check_root and settings.export_root != os.path.expanduser(old_root):
+            check = export_root_check(settings.export_root)
+            if check["reason"] in REFUSING_REASONS:
+                raise SettingsError(f"export_root: {check['problem']}", check["reason"], "export_root")
         self.save(settings)
         return settings
 
