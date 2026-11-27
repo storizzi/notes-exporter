@@ -1,6 +1,6 @@
 # Apple Notes Export Tool <!-- omit from toc -->
 
-**Version 1.5.0** (released 11 November 2026)
+**Version 1.7.1** (released 27 November 2026) — see [Releases](#releases)
 
 <figure style="float: right; margin-left: 10px;">
     <img src="notes-exporter.jpg" alt="Notes Exporter" width="200">
@@ -71,37 +71,31 @@ Output goes to `~/Downloads/AppleNotesExport/` by default. Use `python3`, not
 - Machine-readable JSON Lines output from all commands
 - A `manifest.json` describing every note and its files, for other programs ([INTEGRATION.md](./INTEGRATION.md))
 
-## What's New in 1.5.0
+**Serve** your notes to other programs and AI assistants:
+- A service that exports on a schedule and serves notes over an authenticated HTTP API, with a web page ([SERVICE-API.md](./SERVICE-API.md))
+- An MCP server so Claude Code, Claude Desktop and other assistants can search, read and (if you allow it) change notes ([MCP.md](./MCP.md))
 
-### A service other programs can use
-`notes-exporter serve` keeps running, exports on a schedule and serves the manifest and every exported file over an authenticated HTTP API (users with passwords, API keys with scopes, sessions), with a small web page for status, Run now, a live run log, settings, users and keys. `notes-exporter service install` keeps it running as a LaunchAgent. See [Running as a service](#running-as-a-service) and [SERVICE-API.md](./SERVICE-API.md).
+## Releases
 
-### EPUB
-`--convert-epub` makes one EPUB 3 per note, with its images inside. `--epub-books folder` also makes one EPUB per Notes folder, each note a chapter (`--epub-book-order`, `--epub-book-subfolders separate|nested`), rebuilt only when one of its notes changes.
+The latest first; every change, and how to upgrade, is in [RELEASES.md](./RELEASES.md).
 
-## What's New in 1.4.0
+**Recent**
 
-### Nested folders
-`--folder-hierarchy` exports `Work/Projects/2026` as nested directories (or use `&folderpath` in `--subdir-format`). `--filter-folders` and the new `--exclude-folders` take folder paths. `reorganize_by_folder.py` moves an existing export into the new layout.
+| Version | Date | |
+|---|---|---|
+| [1.7.1](./RELEASES.md#27-november-2026---release-171---what-became-of-a-held-change) | 27 Nov 2026 | A held change can still be looked up once it has been approved or rejected |
+| [1.7.0](./RELEASES.md#27-november-2026---release-170---ai-assistants--safer-writing) | 27 Nov 2026 | **AI assistants (MCP)**: Claude Code, Claude Desktop or any MCP client can search, read and export notes ([MCP.md](./MCP.md)). **Safer writing**: a backup in Notes before every change, deleting, limits on mass changes and an approval list |
+| [1.6.0](./RELEASES.md#14-november-2026---release-160---updates-from-a-client) | 14 Nov 2026 | Update and restart the service from a client or the web page |
+| [1.5.1](./RELEASES.md#14-november-2026---release-151---settings-for-clients--writing-notes) | 14 Nov 2026 | Settings for clients, and writing notes through the service |
 
-### For other programs
-Every run writes `manifest.json`: each note's id, folder path, dates, tags, flags, files with SHA-256 hashes, attachments, renames and moves, deleted and skipped notes. `--json-log` streams progress events, `--non-interactive` never waits at a permission prompt, exit codes say what happened, and a lock stops two exports sharing a folder. See [INTEGRATION.md](./INTEGRATION.md).
+**Milestones**
 
-### Deletions and moves
-Deleted notes are recorded only after a run that read their whole folder, so an interrupted or filtered run no longer marks notes deleted. A note moved to another folder is exported there and its old copy removed. `--prune-deleted` removes the files of deleted notes, keeping locally edited Markdown.
-
-### More
-- `--image-format`, `--image-format-from`, `--image-quality`: convert extracted images (HEIC to JPEG, for example).
-- `--tags`: real `#tags`, pinned and checklist flags from the Notes database (needs Full Disk Access). `--tags-in-content` writes a Tags line into the note.
-- Locked notes are skipped and listed instead of stopping the export; one failing note no longer stops the rest.
-- Paths with spaces, attachment names with `)`, and notes whose title contains quotes all work.
-- Python is found or set up automatically (`.venv`), or named with `--python`.
-
-### Upgrading from 1.3.x
-
-Nothing to do: the default layout is unchanged and old tracking files are read as they are. The first 1.4 run adds folder information to each note. To switch to nested folders, run `reorganize_by_folder.py --root ~/Downloads/AppleNotesExport --dry-run`, then without `--dry-run`, then export with `--folder-hierarchy`.
-
-See [RELEASES.md](./RELEASES.md) for full details, and for 1.3.0 (bidirectional sync, AI search, the query tool, reconciliation).
+| Version | Date | |
+|---|---|---|
+| [1.5.0](./RELEASES.md#11-november-2026---release-150---service-api--epub) | 11 Nov 2026 | **The service**: `notes-exporter serve` exports on a schedule and serves the notes over an authenticated HTTP API, with a web page ([SERVICE-API.md](./SERVICE-API.md)). EPUB output |
+| [1.4.0](./RELEASES.md#11-november-2026---release-140---nested-folders-manifest--reliable-incremental-export) | 11 Nov 2026 | Nested folders, `manifest.json`, JSON Lines events and exit codes for other programs ([INTEGRATION.md](./INTEGRATION.md)), reliable deletions and moves |
+| [1.3.0](./RELEASES.md#18-march-2026---release-130---bidirectional-sync-search--venv-support) | 18 Mar 2026 | Sync edited Markdown back to Notes, text and AI (Qdrant) search, reconciliation |
+| [1.0.0](./RELEASES.md#10-june-2025---release-100---incremental-export--deletion-tracking---breaking-changes) | 10 Jun 2025 | Incremental export and deletion tracking |
 
 ## Setup
 
