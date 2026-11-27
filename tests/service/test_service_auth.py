@@ -212,7 +212,8 @@ def test_settings_scope(service, tmp_path):
     key = make_key(ctx, ["read", "settings"])
     h = {"X-API-Key": key}
     body = client.get("/api/settings", headers=h).json()
-    assert body["read_only"] == ["export_root", "allow_writes"] and body["settings"]["formats"] == ["html"]
+    assert body["read_only"][:2] == ["export_root", "allow_writes"] and body["settings"]["formats"] == ["html"]
+    assert {"write_backup_required", "write_max_changes_per_hour"} <= set(body["read_only"])
     root = body["settings"]["export_root"]
     # It changes what it may, merged like the admin endpoint; the schedule merges too.
     r = client.put("/api/settings", json={"formats": ["html", "md", "pdf"], "prune_deleted": False,

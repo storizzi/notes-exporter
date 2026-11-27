@@ -11,7 +11,15 @@ The only part of the service that changes Notes, so it is fenced in:
 * writing replaces a note's whole body, so a note with attachments that aren't pictures,
   or a checklist, is refused (``reason: losses``) unless the client says ``accept_losses``
   after showing what goes; a locked or deleted note is never written;
-* a new note goes only into a folder the export knows.
+* a new note goes only into a folder the export knows;
+* an update first copies the note as it is into the backup folder (``write_backup_folder``,
+  beneath it the note's folder path) and isn't made when that fails (``reason:
+  backup_failed``); a client may skip it (``backup: "none"``) only while the admin's
+  ``write_backup_required`` is off;
+* a delete is Notes' own (Recently Deleted, recoverable for about 30 days), after the same
+  conflict checks as an update, with a backup copy when asked;
+* at most ``write_max_changes_per_hour`` / ``_per_day`` changes (``write_state.py`` keeps the
+  count across restarts): beyond, **429** ``reason: write_limit`` with ``retry_after``.
 
 The work is done by ``notes_write_helper.py`` (pandoc + osascript) in a subprocess with the
 exporter's clean environment. Each write is appended to ``writes.ndjson`` in the state
@@ -26,6 +34,11 @@ from typing import Callable, List, Optional
 
 from .config import Config
 from .settings import exporter_env
+from .write_state import WriteState
+
+BACKUP_CHOICES = ("folder", "none")
+# What GET /api/version (and /api/health) advertise, so a client can tell these are here.
+FEATURES = ("write", "write_backup", "delete", "write_limit")
 
 
 class WriteRefused(Exception):
@@ -72,8 +85,11 @@ def losses(entry: dict) -> List[str]:
 
 class WriteManager:
     def __init__(self, config: Config, *, load_settings: Callable, note_entry: Callable,
-                 known_folder: Callable, export_root: Callable, running_run_id: Callable, start_run: Callable):
+                 known_folder: Callable, export_root: Callable, running_run_id: Callable, start_run: Callable,
+                 state: Optional[WriteState] = None, local_now: Optional[Callable] = None):
         self.config = config
+        self.limits = state or WriteState(config)
+        self._local_now = local_now or (lambda: datetime.now().astimezone())
         self._load_settings = load_settings
         self._note_entry = note_entry          # note id -> manifest entry (or None)
         self._known_folder = known_folder      # (account, [folders]) -> bool
@@ -86,7 +102,15 @@ class WriteManager:
     def state(self) -> dict:
         settings = self._load_settings()
         return {"allowed": bool(getattr(settings, "allow_writes", False)), "busy": self._lock.locked(),
-                "running_run_id": self._running()}
+                "running_run_id": self._running(), **self.fences(settings)}
+
+    def fences(self, settings=None) -> dict:
+        """The backup settings and the mass-change counts (GET /api/writes, /api/status)."""
+        settings = settings or self._load_settings()
+        return {"backup": {"folder": settings.write_backup_folder, "required": settings.write_backup_required,
+                           "exported": settings.write_backup_export},
+                "limits": self.limits.counts(settings.write_max_changes_per_hour,
+                                             settings.write_max_changes_per_day)}
 
     def _guard(self) -> None:
         if not getattr(self._load_settings(), "allow_writes", False):
@@ -96,6 +120,48 @@ class WriteManager:
         if running:
             raise WriteRefused(409, "an export is running; write when it has finished", reason="running",
                                running_run_id=running)
+
+    def _check_limit(self, settings) -> None:
+        over = self.limits.check(settings.write_max_changes_per_hour, settings.write_max_changes_per_day)
+        if over:
+            per = "an hour" if over["window"] == "hour" else "a day"
+            raise WriteRefused(429, f"too many changes to Notes: at most {over['max']} {per} (the admin's limit "
+                                    f"against mass changes); try again in {over['retry_after']} s",
+                               reason="write_limit", retry_after=over["retry_after"], window=over["window"],
+                               max=over["max"], count=over["count"])
+
+    def _backup_choice(self, settings, backup: Optional[str], default: str) -> str:
+        choice = (backup or default).strip().lower()
+        if choice not in BACKUP_CHOICES:
+            raise WriteRefused(400, f"backup must be one of {list(BACKUP_CHOICES)}", reason="bad_request")
+        if choice == "none" and default == "folder" and settings.write_backup_required:
+            raise WriteRefused(403, "the admin requires a backup before a note is changed (write_backup_required)",
+                               reason="backup_required")
+        return choice
+
+    def _writable_entry(self, note_id: str) -> dict:
+        entry = self._note_entry(note_id)
+        if not entry:
+            raise WriteRefused(404, "no such note in the export", reason="not_found")
+        if entry.get("deleted"):
+            raise WriteRefused(409, "that note was deleted in Notes", reason="deleted")
+        if entry.get("locked"):
+            raise WriteRefused(409, "that note is locked; Notes doesn't let a script change it", reason="locked")
+        return entry
+
+    def _check_export(self, entry: dict, base_modified: Optional[str], force: bool) -> None:
+        if not force and base_modified is not None and not same_time(base_modified, entry.get("modified")):
+            raise WriteRefused(409, "the note changed since you opened it (a newer export has it)", reason="export",
+                               modified=entry.get("modified"))
+
+    def _check_live(self, note_id: str, entry: dict) -> None:
+        live = self._helper({"operation": "modified", "note_id": note_id})
+        if not live.get("ok"):
+            raise self._failed(live)
+        if not same_time(live.get("modified"), entry.get("modified")):
+            raise WriteRefused(409, "the note was changed in Notes after the last export — export, then "
+                                    "edit the new version", reason="notes", notes_modified=live.get("modified"),
+                               modified=entry.get("modified"))
 
     def _helper(self, request: dict) -> dict:
         try:
@@ -141,52 +207,99 @@ class WriteManager:
     def _failed(self, out: dict) -> WriteRefused:
         code = out.get("code") or "failed"
         status = {"permission": 503, "not_found": 404, "bad_request": 400, "platform": 501,
-                  "pandoc": 500, "timeout": 504}.get(code, 502)
+                  "pandoc": 500, "timeout": 504, "locked": 409}.get(code, 502)
         message = out.get("error") or "Notes refused the change"
         if code == "permission":
             message = ("the service isn't allowed to control Notes: allow it in System Settings → Privacy & "
                        "Security → Automation (" + message + ")")
         return WriteRefused(status, message, reason=code)
 
+    def _backup(self, note_id: str, entry: dict, settings, by: str) -> str:
+        """Copy the note as it is into the backup folder; the copy's id, or WriteRefused (and the
+        caller changes nothing)."""
+        account = entry.get("account") or ""
+        path = [str(p) for p in entry.get("folder_path") or [] if str(p)]
+        when = self._local_now().strftime("%Y-%m-%d %H:%M")
+        out = self._helper({"operation": "backup", "note_id": note_id, "account": account,
+                            "backup_folder": settings.write_backup_folder, "folder_path": path,
+                            "suffix": f" (before {when})"})
+        self._log(by=by, operation="backup", note_id=note_id, backup_note_id=out.get("note_id"),
+                  ok=bool(out.get("ok")), error=None if out.get("ok") else out.get("error"))
+        if not out.get("ok"):
+            failed = self._failed(out)
+            if failed.info.get("reason") in ("permission", "timeout", "platform", "locked"):
+                raise failed
+            raise WriteRefused(502, "the note couldn't be backed up, so it wasn't changed: " + str(failed),
+                               reason="backup_failed")
+        self.limits.record_backup_folder(account, [settings.write_backup_folder, *path])
+        return out.get("note_id")
+
     # ---- the writes ----
     def update(self, note_id: str, *, markdown: str, base_modified: Optional[str], title: str = "",
                force: bool = False, accept_losses: bool = False, by: str = "",
-               export: bool = True, formats: Optional[List[str]] = None) -> dict:
+               export: bool = True, formats: Optional[List[str]] = None, backup: Optional[str] = None) -> dict:
         self._guard()
-        entry = self._note_entry(note_id)
-        if not entry:
-            raise WriteRefused(404, "no such note in the export", reason="not_found")
-        if entry.get("deleted"):
-            raise WriteRefused(409, "that note was deleted in Notes", reason="deleted")
-        if entry.get("locked"):
-            raise WriteRefused(409, "that note is locked; Notes doesn't let a script change it", reason="locked")
+        settings = self._load_settings()
+        choice = self._backup_choice(settings, backup, "folder")
+        entry = self._writable_entry(note_id)
         lost = losses(entry)
         if lost and not accept_losses:
             raise WriteRefused(409, "writing this note would lose " + "; ".join(lost), reason="losses", losses=lost)
-        if not force and base_modified is not None and not same_time(base_modified, entry.get("modified")):
-            raise WriteRefused(409, "the note changed since you opened it (a newer export has it)", reason="export",
-                               modified=entry.get("modified"))
+        self._check_export(entry, base_modified, force)
         if not self._lock.acquire(blocking=False):
             raise WriteRefused(409, "another write is in progress", reason="busy")
+        backup_id = None
         try:
+            self._check_limit(settings)
             if not force:
-                live = self._helper({"operation": "modified", "note_id": note_id})
-                if not live.get("ok"):
-                    raise self._failed(live)
-                if not same_time(live.get("modified"), entry.get("modified")):
-                    raise WriteRefused(409, "the note was changed in Notes after the last export — export, then "
-                                            "edit the new version", reason="notes", notes_modified=live.get("modified"),
-                                       modified=entry.get("modified"))
+                self._check_live(note_id, entry)
+            if choice == "folder":
+                backup_id = self._backup(note_id, entry, settings, by)
             out = self._helper({"operation": "update", "note_id": note_id, "title": title, "markdown": markdown,
                                 "base_dir": self._base_dir(entry), "root": str(self._export_root())})
             self._log(by=by, operation="update", note_id=note_id, ok=bool(out.get("ok")), force=force,
-                      accept_losses=accept_losses, error=None if out.get("ok") else out.get("error"))
+                      accept_losses=accept_losses, backup_note_id=backup_id,
+                      error=None if out.get("ok") else out.get("error"))
             if not out.get("ok"):
                 raise self._failed(out)
+            self.limits.record_change()
         finally:
             self._lock.release()
         run = self._after(entry.get("account") or "", list(entry.get("folder_path") or []), formats, export)
-        return {"note_id": out.get("note_id") or note_id, "modified": out.get("modified"), "run": run}
+        return {"note_id": out.get("note_id") or note_id, "modified": out.get("modified"),
+                "backup_note_id": backup_id, "run": run}
+
+    def delete(self, note_id: str, *, base_modified: Optional[str], force: bool = False, by: str = "",
+               backup: Optional[str] = None, export: bool = True, formats: Optional[List[str]] = None) -> dict:
+        """Notes' own delete — the note goes to Recently Deleted — after the update's checks."""
+        self._guard()
+        settings = self._load_settings()
+        choice = self._backup_choice(settings, backup, "none")
+        if base_modified is None and not force:
+            raise WriteRefused(400, "send base, the note's modified when you read it, to delete it",
+                               reason="bad_request")
+        entry = self._writable_entry(note_id)
+        self._check_export(entry, base_modified, force)
+        if not self._lock.acquire(blocking=False):
+            raise WriteRefused(409, "another write is in progress", reason="busy")
+        backup_id = None
+        try:
+            self._check_limit(settings)
+            if not force:
+                self._check_live(note_id, entry)
+            if choice == "folder":
+                backup_id = self._backup(note_id, entry, settings, by)
+            out = self._helper({"operation": "delete", "note_id": note_id})
+            self._log(by=by, operation="delete", note_id=note_id, ok=bool(out.get("ok")), force=force,
+                      backup_note_id=backup_id, error=None if out.get("ok") else out.get("error"))
+            if not out.get("ok"):
+                raise self._failed(out)
+            self.limits.record_change()
+        finally:
+            self._lock.release()
+        run = self._after(entry.get("account") or "", list(entry.get("folder_path") or []), formats, export)
+        return {"note_id": note_id, "deleted": True, "recently_deleted": True, "backup_note_id": backup_id,
+                "run": run}
 
     def create(self, *, account: str, folder_path: List[str], markdown: str, title: str = "", by: str = "",
                export: bool = True, formats: Optional[List[str]] = None) -> dict:
@@ -203,6 +316,7 @@ class WriteManager:
         if not self._lock.acquire(blocking=False):
             raise WriteRefused(409, "another write is in progress", reason="busy")
         try:
+            self._check_limit(self._load_settings())
             out = self._helper({"operation": "create", "account": account, "folder_path": folders, "title": title,
                                 "markdown": markdown, "base_dir": str(self._export_root()),
                                 "root": str(self._export_root())})
@@ -210,6 +324,7 @@ class WriteManager:
                       error=None if out.get("ok") else out.get("error"))
             if not out.get("ok"):
                 raise self._failed(out)
+            self.limits.record_change()
         finally:
             self._lock.release()
         run = self._after(account, folders, formats, export)

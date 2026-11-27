@@ -22,7 +22,7 @@ from .runs import RunBusy, RunError, RunManager, RunStore, read_events
 from .scheduler import Scheduler
 from .settings import CLIENT_READ_ONLY, RUN_FORMATS, SettingsError, SettingsStore, export_root_state
 from .updates import UpdateManager, UpdateRefused
-from .writes import WriteManager, WriteRefused
+from .writes import FEATURES, WriteManager, WriteRefused
 
 WEB_DIR = Path(__file__).parent / "web"
 # Query parameters that look like credentials: refused, so a key never ends up in a log or history.
@@ -136,6 +136,9 @@ class NoteUpdate(BaseModel):
     accept_losses: bool = False
     export: bool = True
     formats: List[RunFormat] = Field(default_factory=list)  # type: ignore[valid-type]
+    # 1.7.0: copy the note into the backup folder first (default), or not (only while the
+    # admin's write_backup_required is off).
+    backup: Optional[Literal["folder", "none"]] = None
 
 
 class NoteCreate(BaseModel):
@@ -278,7 +281,7 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
     def health():
         return {"service": "notes-exporter", "version": __version__, "api_version": API_VERSION,
                 "manifest_version": MANIFEST_VERSION, "platform": sys.platform,
-                "macos_version": platform.mac_ver()[0] or None}
+                "macos_version": platform.mac_ver()[0] or None, "features": list(FEATURES)}
 
     @app.get("/api/setup")
     def setup_state(request: Request):
@@ -359,7 +362,7 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
             "formats": settings.formats,
             "epub_books": settings.epub_books,
             "version": __version__,
-            "writes": {"allowed": settings.allow_writes},
+            "writes": {"allowed": settings.allow_writes, **ctx.writes.fences(settings)},
         }
 
     def _manifest_or_404():
@@ -390,7 +393,8 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
 
     # ---- writing to Notes (the `write` scope; writes.py has the fences) ----
     def _write_error(e: WriteRefused):
-        return JSONResponse({"detail": str(e), **e.info}, status_code=e.status)
+        headers = {"Retry-After": str(e.info["retry_after"])} if e.info.get("retry_after") else None
+        return JSONResponse({"detail": str(e), **e.info}, status_code=e.status, headers=headers)
 
     @app.get("/api/writes")
     def write_state(p: Principal = Depends(need("read"))):
@@ -409,7 +413,17 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
         try:
             return ctx.writes.update(note_id, markdown=body.markdown, base_modified=body.base_modified,
                                      title=body.title, force=body.force, accept_losses=body.accept_losses,
-                                     by=p.label, export=body.export, formats=list(body.formats))
+                                     by=p.label, export=body.export, formats=list(body.formats), backup=body.backup)
+        except WriteRefused as e:
+            return _write_error(e)
+
+    @app.delete("/api/notes/{note_id:path}")
+    def delete_note(note_id: str, base: Optional[str] = None, base_modified: Optional[str] = None,
+                    backup: Optional[Literal["folder", "none"]] = None, force: bool = False, export: bool = True,
+                    p: Principal = Depends(need("write"))):
+        try:
+            return ctx.writes.delete(note_id, base_modified=base if base is not None else base_modified,
+                                     force=force, backup=backup, by=p.label, export=export)
         except WriteRefused as e:
             return _write_error(e)
 
@@ -517,7 +531,7 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
 
     @app.get("/api/version")
     def version(refresh: bool = False, p: Principal = Depends(need("read"))):
-        return ctx.updates.view(refresh=refresh)
+        return dict(ctx.updates.view(refresh=refresh), features=list(FEATURES))
 
     @app.post("/api/admin/update")
     def update(body: Optional[UpdateRequest] = None, p: Principal = Depends(need("admin"))):

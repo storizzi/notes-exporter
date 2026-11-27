@@ -21,8 +21,11 @@ RUN_FORMATS = ("html", "md", "pdf", "docx", "epub", "text")
 IMAGE_FORMATS = ("jpeg", "png", "heic", "tiff", "webp")
 # Settings a `settings`-scope key can read but not change: where the export is written is the
 # Mac's own business (a key could otherwise point the exporter at any folder of its user's).
-# Whether clients may write to Notes is the Mac owner's decision too.
-CLIENT_READ_ONLY = ("export_root", "allow_writes")
+# Whether clients may write to Notes is the Mac owner's decision too, and so are the fences
+# around those writes (backups, limits): a client can't loosen them.
+WRITE_FENCES = ("write_backup_folder", "write_backup_required", "write_backup_export",
+                "write_max_changes_per_hour", "write_max_changes_per_day")
+CLIENT_READ_ONLY = ("export_root", "allow_writes") + WRITE_FENCES
 _HHMM = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 
@@ -92,6 +95,16 @@ class Settings(BaseModel):
     schedule: Schedule = Field(default_factory=Schedule)
     # Clients with the `write` scope may change and create notes (notes_service/writes.py).
     allow_writes: bool = False
+    # Before an update (and a delete that asks for it) the note is copied into this folder of
+    # its account, beneath it the note's own folder path (writes.py).
+    write_backup_folder: str = "FunHoard Backups"
+    # Clients may not skip the backup of an update (backup: "none").
+    write_backup_required: bool = True
+    # Export the backup folder like any other (off: exports leave it out).
+    write_backup_export: bool = False
+    # Mass-change guard: changes (updates, new notes, deletes) allowed in any hour / day; 0 = no limit.
+    write_max_changes_per_hour: int = 50
+    write_max_changes_per_day: int = 200
 
     @field_validator("formats")
     @classmethod
@@ -100,6 +113,24 @@ class Settings(BaseModel):
         if bad:
             raise ValueError(f"unknown formats {bad}; use {list(ALL_FORMATS)}")
         return [f for f in ALL_FORMATS if f in v] or ["html"]
+
+    @field_validator("write_backup_folder")
+    @classmethod
+    def _backup_folder(cls, v):
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("write_backup_folder needs a folder name")
+        if len(v) > 100 or any(c in v for c in "/,\n\r\t\0") or v.startswith("-"):
+            raise ValueError("write_backup_folder: one folder name (up to 100 characters) without '/', commas "
+                             "or line breaks, not starting with '-'")
+        return v
+
+    @field_validator("write_max_changes_per_hour", "write_max_changes_per_day")
+    @classmethod
+    def _limits(cls, v):
+        if v < 0:
+            raise ValueError("write limits must be 0 (no limit) or more")
+        return v
 
     @field_validator("exclude_folders")
     @classmethod
@@ -382,8 +413,15 @@ def exporter_args(config: Config, settings: Settings, *, json_log: Path, mode: s
     ]
     if settings.folder_hierarchy:
         args.append("--folder-hierarchy")
-    if settings.exclude_folders:
-        args += ["--exclude-folders", ",".join(settings.exclude_folders)]
+    excluded = list(settings.exclude_folders)
+    if not settings.write_backup_export:
+        # The backups the service made in Notes stay out of the export (and so out of clients).
+        from .write_state import WriteState
+        state = WriteState(config)
+        if settings.allow_writes or state.backup_folders():
+            excluded += [f for f in state.backup_exclusions(settings.write_backup_folder) if f not in excluded]
+    if excluded:
+        args += ["--exclude-folders", ",".join(excluded)]
     if settings.image_format:
         args += ["--image-format", settings.image_format]
         if settings.image_format_from:

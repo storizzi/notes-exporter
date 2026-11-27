@@ -4,6 +4,13 @@
 --   osascript notes_write.applescript modified <note id>
 --   osascript notes_write.applescript update <note id> <title> <body file>
 --   osascript notes_write.applescript create <account> <title> <body file> <folder> [<subfolder> …]
+--   osascript notes_write.applescript backup <note id> <account> <backup folder> <title suffix> [<folder> …]
+--   osascript notes_write.applescript delete <note id>
+--
+-- backup copies the note (its name and body — the HTML Notes gives, pictures embedded) into
+-- <backup folder> at the top of <account>, beneath it the folders named (made when missing),
+-- titled with <title suffix> added; it answers the copy's id. delete is Notes' own delete: the
+-- note goes to Recently Deleted. Neither touches a locked (password protected) note.
 --
 -- Every value arrives as its own argument and the body (HTML) from a UTF-8 file, so nothing
 -- is split or quoted here. The answer, on stdout, is one line:
@@ -41,6 +48,31 @@ on run argv
                 set noteId to id of theNote
                 set modDate to modification date of theNote
             end tell
+        else if op is "backup" then
+            set folderNames to {}
+            if (count of argv) > 5 then set folderNames to items 6 thru -1 of argv
+            tell application "Notes"
+                set theNote to note id (item 2 of argv)
+                if password protected of theNote then error "the note is locked" number -10050
+                set srcName to name of theNote
+                set srcBody to body of theNote
+                set target to my childFolder(account (item 3 of argv), item 4 of argv)
+                repeat with nm in folderNames
+                    set target to my childFolder(target, contents of nm)
+                end repeat
+                set theCopy to make new note at target with properties {body:srcBody}
+                set name of theCopy to (srcName & (item 5 of argv))
+                set noteId to id of theCopy
+                set modDate to modification date of theCopy
+            end tell
+        else if op is "delete" then
+            tell application "Notes"
+                set theNote to note id (item 2 of argv)
+                if password protected of theNote then error "the note is locked" number -10050
+                set noteId to id of theNote
+                set modDate to modification date of theNote
+                delete theNote
+            end tell
         else
             return "error" & tab & "-1" & tab & "unknown operation " & op
         end if
@@ -49,6 +81,18 @@ on run argv
         return "error" & tab & (errNum as text) & tab & my oneLine(errMsg)
     end try
 end run
+
+-- The folder called nm directly inside parentObj (an account or a folder), made when missing.
+-- "folders of" an account lists nested folders too, so the container is checked.
+on childFolder(parentObj, nm)
+    tell application "Notes"
+        set parentId to id of parentObj
+        repeat with f in (every folder of parentObj whose name is nm)
+            if (id of (container of f)) is parentId then return contents of f
+        end repeat
+        return make new folder at parentObj with properties {name:nm}
+    end tell
+end childFolder
 
 on readFile(p)
     return read (POSIX file p) as «class utf8»

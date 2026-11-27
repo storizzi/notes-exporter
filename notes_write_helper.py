@@ -9,6 +9,11 @@ Requests::
     {"operation": "update", "note_id": "…", "title": "…", "markdown": "…", "base_dir": "…", "root": "…"}
     {"operation": "create", "account": "iCloud", "folder_path": ["Food", "Baking"], "title": "…",
      "markdown": "…", "base_dir": "…", "root": "…"}
+    {"operation": "backup", "note_id": "…", "account": "iCloud", "backup_folder": "FunHoard Backups",
+     "folder_path": ["Food", "Baking"], "suffix": " (before 2026-11-27 14:05)"}
+    {"operation": "delete", "note_id": "…"}
+
+``backup`` answers the copy's id; ``delete`` moves the note to Notes' Recently Deleted.
 
 Answers ``{"ok": true, "note_id", "modified"}`` (``modified`` aware ISO 8601, as the
 manifest has it) or ``{"ok": false, "error", "code"}``.
@@ -108,17 +113,32 @@ def run_script(args):
     if r.returncode != 0 or parts[0] != "ok" or len(parts) < 3:
         if parts[0] == "error" and len(parts) >= 3:
             num = parts[1]
-            code = "permission" if num in ("-1743", "-10004") else "not_found" if num in ("-1728", "-1719") else "failed"
+            code = ("permission" if num in ("-1743", "-10004") else "not_found" if num in ("-1728", "-1719")
+                    else "locked" if num == "-10050" else "failed")
             raise WriteFailed(parts[2] or "Notes refused", code)
         raise WriteFailed((r.stderr or "osascript failed").strip()[:300])
     import tracker_io
     return {"ok": True, "note_id": parts[1], "modified": tracker_io.local_to_aware(parts[2]) or parts[2]}
 
 
+def _one_line(value) -> str:
+    return str(value or "").replace("\n", " ").replace("\r", " ").strip()
+
+
 def handle(req):
     op = req.get("operation")
     if op == "modified":
         return run_script(["modified", str(req["note_id"])])
+    if op == "delete":
+        return run_script(["delete", str(req["note_id"])])
+    if op == "backup":
+        folder = _one_line(req.get("backup_folder"))
+        account = _one_line(req.get("account"))
+        if not folder or not account:
+            raise WriteFailed("a backup needs an account and a backup folder", "bad_request")
+        path = [_one_line(p) for p in (req.get("folder_path") or []) if _one_line(p)]
+        return run_script(["backup", str(req["note_id"]), account, folder,
+                           str(req.get("suffix") or "").replace("\n", " ").replace("\r", " "), *path])
     if op not in ("update", "create"):
         raise WriteFailed(f"unknown operation {op!r}", "bad_request")
     html = embed_images(markdown_to_html(req.get("markdown") or ""), req.get("base_dir") or "", req.get("root") or "")
