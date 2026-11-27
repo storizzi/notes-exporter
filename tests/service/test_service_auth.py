@@ -61,7 +61,7 @@ def test_credentials_in_query_string_refused(service, param):
 def test_login_logout_me(service):
     client, ctx = service
     me = client.get("/api/auth/me").json()
-    assert me["username"] == "root" and set(me["scopes"]) == {"read", "run", "settings", "write", "admin"}
+    assert me["username"] == "root" and set(me["scopes"]) == {"read", "run", "settings", "write", "approve", "admin"}
     assert client.post("/api/auth/logout").status_code == 200
     assert client.get("/api/auth/me").status_code == 401
 

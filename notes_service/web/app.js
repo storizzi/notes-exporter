@@ -7,6 +7,11 @@ const FORMATS = [
   ['epub', 'EPUB'], ['text', 'Plain text (always)'], ['raw', 'Raw HTML (always)'],
 ];
 const ALWAYS = new Set(['raw', 'text']);
+const FENCE_NUMBERS = ['write_max_changes_per_hour', 'write_max_changes_per_day', 'write_hold_batch_over',
+  'write_hold_batch_seconds', 'write_hold_count_over', 'write_hold_window_hours', 'write_hold_change_percent',
+  'write_hold_min_lines', 'write_hold_max_age_days'];
+const HOLD_WORDS = { batch: 'many writes at once', count: 'many changes in a while', big_change: 'a big change' };
+const KIND_WORDS = { update: 'Change', create: 'New note', delete: 'Delete' };
 const $ = (sel) => document.querySelector(sel);
 let token = null;
 let me = null;
@@ -63,14 +68,71 @@ async function enterApp() {
   show('#app', true); show('#logout', true);
   $('#who').textContent = `${me.username} (${me.role})`;
   document.querySelectorAll('.admin-only').forEach((b) => { b.hidden = !me.scopes.includes('admin'); });
-  selectTab('status');
+  const approver = me.scopes.includes('approve');
+  document.querySelectorAll('.approve-only').forEach((b) => { b.hidden = !approver; });
+  if (approver) countApprovals();
+  const wanted = location.pathname.replace(/^\//, '') || location.hash.replace(/^#/, '');
+  if (location.pathname !== '/') history.replaceState(null, '', '/');
+  if (wanted === 'approvals' && approver) selectTab('approvals');
+  else if (!me.scopes.includes('read') && approver) selectTab('approvals');
+  else selectTab('status');
 }
 
 function selectTab(name) {
   document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.panel').forEach((p) => { p.hidden = p.id !== 'tab-' + name; });
-  ({ status: loadStatus, settings: loadSettings, users: loadUsers, keys: loadKeys })[name]();
+  ({ status: loadStatus, approvals: loadApprovals, settings: loadSettings, users: loadUsers, keys: loadKeys })[name]();
 }
+
+// ---- approvals ----
+let shownApproval = null;
+async function countApprovals() {
+  try { const r = await api('GET', '/approvals'); $('#approvals-count').textContent = r.counts.total ? `(${r.counts.total})` : ''; } catch { /* */ }
+}
+
+async function loadApprovals() {
+  $('#approvals-error').textContent = '';
+  const r = await api('GET', '/approvals');
+  $('#approvals-count').textContent = r.counts.total ? `(${r.counts.total})` : '';
+  $('#approvals-note').textContent = r.counts.total ? `${r.counts.pending} waiting, ${r.counts.stale} stale` : 'Nothing is waiting.';
+  $('#approvals-all').checked = false;
+  const tb = $('#approvals tbody'); tb.replaceChildren();
+  for (const a of r.approvals) {
+    const box = el('input', { type: 'checkbox', class: 'approval-pick', value: a.id });
+    const where = [a.account, ...(a.folder_path || [])].join(' / ');
+    const what = (KIND_WORDS[a.kind] || a.kind) + (a.change_percent != null ? ` (${a.change_percent} % changed)` : '');
+    tb.append(el('tr', {},
+      el('td', {}, box), el('td', {}, when(a.created_at)), el('td', {}, what),
+      el('td', {}, `${a.title || '(untitled)'} — ${where}`), el('td', {}, (a.client && a.client.name) || ''),
+      el('td', { title: (a.rule && a.rule.detail) || '' }, HOLD_WORDS[a.reason] || a.reason),
+      el('td', {}, a.status === 'stale' ? `stale: the note changed (${a.stale_reason})` : 'waiting'),
+      el('td', {}, el('button', { onclick: () => showApproval(a.id) }, 'Show'))));
+  }
+  if (shownApproval && !r.approvals.some((a) => a.id === shownApproval)) { shownApproval = null; show('#approval-detail', false); }
+}
+
+async function showApproval(id) {
+  const a = await api('GET', '/approvals/' + encodeURIComponent(id));
+  shownApproval = id;
+  $('#approval-title').textContent = `${KIND_WORDS[a.kind] || a.kind}: ${a.title || '(untitled)'} — ${(a.rule && a.rule.detail) || ''}`;
+  $('#approval-before').textContent = a.before || '';
+  $('#approval-after').textContent = a.kind === 'delete' ? '(deleted: moved to Recently Deleted in Notes)' : (a.after || '');
+  $('#approval-diff').textContent = a.diff || '';
+  show('#approval-detail', true);
+}
+
+async function decide(action, ids, all) {
+  $('#approvals-error').textContent = '';
+  if (!all && !ids.length) { $('#approvals-error').textContent = 'Tick some first.'; return; }
+  try {
+    const r = await api('POST', '/approvals/bulk', all ? { action, all: true } : { action, ids });
+    const failed = r.results.filter((x) => !x.ok);
+    $('#approvals-note').textContent = `${r.approved} approved, ${r.rejected} rejected` + (failed.length ? `, ${failed.length} not made` : '');
+    if (failed.length) $('#approvals-error').textContent = failed.map((x) => x.detail).join(' · ');
+  } catch (e) { $('#approvals-error').textContent = e.message; }
+  loadApprovals();
+}
+const picked = () => [...document.querySelectorAll('.approval-pick:checked')].map((b) => b.value);
 
 // ---- status + runs ----
 async function loadStatus() {
@@ -269,6 +331,11 @@ async function loadSettings() {
     f.epub_book_order.value = s.epub_book_order || 'modified';
     f.epub_book_subfolders.value = s.epub_book_subfolders || 'separate';
   }
+  if (f.write_backup_folder) {
+    f.write_backup_folder.value = s.write_backup_folder || '';
+    for (const k of ['write_backup_required', 'write_backup_export']) f[k].checked = !!s[k];
+    for (const k of FENCE_NUMBERS) f[k].value = s[k] ?? '';
+  }
   f.schedule_enabled.checked = !!s.schedule.enabled;
   f.schedule_kind.value = s.schedule.interval_minutes ? 'interval' : 'daily';
   f.daily_at.value = s.schedule.daily_at || '';
@@ -306,6 +373,11 @@ async function saveSettings(ev) {
   if (f.epub_books) Object.assign(body, {
     epub_books: f.epub_books.value, epub_book_order: f.epub_book_order.value, epub_book_subfolders: f.epub_book_subfolders.value,
   });
+  if (f.write_backup_folder) {
+    Object.assign(body, { write_backup_folder: f.write_backup_folder.value.trim(),
+      write_backup_required: f.write_backup_required.checked, write_backup_export: f.write_backup_export.checked });
+    for (const k of FENCE_NUMBERS) if (f[k].value !== '') body[k] = Number(f[k].value);
+  }
   try { await api('PUT', '/admin/settings', body); $('#settings-ok').textContent = 'Saved.'; loadSettings(); } catch (e) { $('#settings-error').textContent = e.message; }
 }
 
@@ -395,5 +467,11 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#user-form').addEventListener('submit', addUser);
   $('#key-form').addEventListener('submit', addKey);
   $('#copy-key').addEventListener('click', copyKey);
+  $('#approve-selected').addEventListener('click', () => decide('approve', picked()));
+  $('#reject-selected').addEventListener('click', () => decide('reject', picked()));
+  $('#approve-all').addEventListener('click', () => { if (confirm('Make every waiting change in Apple Notes?')) decide('approve', [], true); });
+  $('#approvals-all').addEventListener('change', (ev) => document.querySelectorAll('.approval-pick').forEach((b) => { b.checked = ev.target.checked; }));
+  $('#approval-approve').addEventListener('click', () => shownApproval && decide('approve', [shownApproval]));
+  $('#approval-reject').addEventListener('click', () => shownApproval && decide('reject', [shownApproval]));
   start();
 });

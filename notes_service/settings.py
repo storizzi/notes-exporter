@@ -24,7 +24,10 @@ IMAGE_FORMATS = ("jpeg", "png", "heic", "tiff", "webp")
 # Whether clients may write to Notes is the Mac owner's decision too, and so are the fences
 # around those writes (backups, limits): a client can't loosen them.
 WRITE_FENCES = ("write_backup_folder", "write_backup_required", "write_backup_export",
-                "write_max_changes_per_hour", "write_max_changes_per_day")
+                "write_max_changes_per_hour", "write_max_changes_per_day", "write_hold_batch_over",
+                "write_hold_batch_seconds", "write_hold_count_over", "write_hold_window_hours",
+                "write_hold_change_percent", "write_hold_min_lines", "write_hold_max_age_days",
+                "login_link_ttl_seconds")
 CLIENT_READ_ONLY = ("export_root", "allow_writes") + WRITE_FENCES
 _HHMM = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
@@ -105,6 +108,17 @@ class Settings(BaseModel):
     # Mass-change guard: changes (updates, new notes, deletes) allowed in any hour / day; 0 = no limit.
     write_max_changes_per_hour: int = 50
     write_max_changes_per_day: int = 200
+    # The approval list (approvals.py): a write tripping one of these is held, not made, until
+    # someone with the approve scope approves it. 0 turns a rule off.
+    write_hold_batch_over: int = 3          # more than this many writes by one client within …
+    write_hold_batch_seconds: int = 60      # … this many seconds
+    write_hold_count_over: int = 5          # more than this many changes made within …
+    write_hold_window_hours: int = 24       # … this many hours
+    write_hold_change_percent: int = 50     # more than this share of a note's words changed …
+    write_hold_min_lines: int = 2           # … for a note longer than this many lines (a delete: 100 %)
+    write_hold_max_age_days: int = 0        # held writes older than this are dropped; 0 = kept
+    # A one-off sign-in link for the web page (POST /api/auth/login-link) lasts this long.
+    login_link_ttl_seconds: int = 60
 
     @field_validator("formats")
     @classmethod
@@ -125,11 +139,34 @@ class Settings(BaseModel):
                              "or line breaks, not starting with '-'")
         return v
 
-    @field_validator("write_max_changes_per_hour", "write_max_changes_per_day")
+    @field_validator("write_max_changes_per_hour", "write_max_changes_per_day", "write_hold_batch_over",
+                     "write_hold_count_over", "write_hold_change_percent", "write_hold_min_lines",
+                     "write_hold_max_age_days")
     @classmethod
     def _limits(cls, v):
         if v < 0:
-            raise ValueError("write limits must be 0 (no limit) or more")
+            raise ValueError("write limits must be 0 (off) or more")
+        return v
+
+    @field_validator("write_hold_batch_seconds")
+    @classmethod
+    def _batch_seconds(cls, v):
+        if not 1 <= v <= 86400:
+            raise ValueError("write_hold_batch_seconds must be 1-86400")
+        return v
+
+    @field_validator("write_hold_window_hours")
+    @classmethod
+    def _window(cls, v):
+        if not 1 <= v <= 24 * 31:
+            raise ValueError("write_hold_window_hours must be 1-744")
+        return v
+
+    @field_validator("login_link_ttl_seconds")
+    @classmethod
+    def _link_ttl(cls, v):
+        if not 10 <= v <= 600:
+            raise ValueError("login_link_ttl_seconds must be 10-600")
         return v
 
     @field_validator("exclude_folders")

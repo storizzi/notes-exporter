@@ -26,10 +26,11 @@ from .config import Config
 from .db import Database
 
 ROLES = ("admin", "reader")
-SCOPES = ("read", "run", "settings", "write", "admin")
-ROLE_SCOPES = {"admin": {"read", "run", "settings", "write", "admin"}, "reader": {"read", "run"}}
-# A scope that includes another: an admin key may also do what a settings key does.
-IMPLIED_SCOPES = {"admin": {"settings"}}
+SCOPES = ("read", "run", "settings", "write", "approve", "admin")
+ROLE_SCOPES = {"admin": {"read", "run", "settings", "write", "approve", "admin"}, "reader": {"read", "run"}}
+# A scope that includes another: an admin key may also do what a settings key does, and approve
+# held writes (the approval list).
+IMPLIED_SCOPES = {"admin": {"settings", "approve"}}
 
 
 def with_implied(scopes: Set[str]) -> Set[str]:
@@ -69,6 +70,17 @@ CREATE TABLE IF NOT EXISTS api_keys (
     created_at TEXT NOT NULL,
     last_used_at TEXT,
     expires_at TEXT
+);
+-- One-off sign-in links for the web page (POST /api/auth/login-link): only a digest of the token.
+CREATE TABLE IF NOT EXISTS login_links (
+    digest TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    scopes TEXT NOT NULL,
+    next TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    used_at REAL
 );
 """
 
@@ -268,16 +280,20 @@ class AuthStore:
         session = self.open_session(user)
         return {"token": session["token"], "expires_at": session["expires_at"]}
 
-    def open_session(self, user: dict, hours: Optional[float] = None) -> dict:
-        """A session with its id (``session_id``), for a caller that revokes it itself (the CLI)."""
+    def open_session(self, user: dict, hours: Optional[float] = None, scopes: Optional[Set[str]] = None) -> dict:
+        """A session with its id (``session_id``), for a caller that revokes it itself (the CLI).
+        ``scopes`` narrows what it may do below the user's role (a sign-in link's session has
+        only its key's scopes); it is a signed claim, so it can't be widened."""
         sid = uuid.uuid4().hex
         now = time.time()
         exp = now + (self.config.session_hours if hours is None else hours) * 3600
         self.db.run("INSERT INTO sessions(id, user_id, created_at, expires_at) VALUES(?,?,?,?)",
                     (sid, user["id"], now, exp))
         self.db.run("DELETE FROM sessions WHERE expires_at < ?", (now,))
-        token = jwt.encode({"sub": user["id"], "sid": sid, "iat": int(now), "exp": int(exp)},
-                           self._secret, algorithm="HS256")
+        claims = {"sub": user["id"], "sid": sid, "iat": int(now), "exp": int(exp)}
+        if scopes is not None:
+            claims["scp"] = [s for s in SCOPES if s in scopes]
+        token = jwt.encode(claims, self._secret, algorithm="HS256")
         return {"token": token, "session_id": sid,
                 "expires_at": datetime.fromtimestamp(int(exp), timezone.utc).isoformat()}
 
@@ -299,8 +315,42 @@ class AuthStore:
         user = self.get_user(claims["sub"])
         if not user:
             return None
-        return Principal("user", user["id"], user["username"], user["role"],
-                         set(ROLE_SCOPES[user["role"]]), session_id=claims["sid"])
+        scopes = set(ROLE_SCOPES[user["role"]])
+        if isinstance(claims.get("scp"), list):
+            scopes &= with_implied(set(claims["scp"]))
+        return Principal("user", user["id"], user["username"], user["role"], scopes, session_id=claims["sid"])
+
+    # ---- one-off sign-in links ----
+    def create_login_link(self, user_id: str, scopes: Set[str], next_path: str, ttl_seconds: float,
+                          created_by: str) -> dict:
+        """A random single-use token (only its digest kept) for ``redeem_login_link``."""
+        token = secrets.token_urlsafe(32)
+        now = time.time()
+        self.db.run("DELETE FROM login_links WHERE expires_at < ?", (now - 3600,))
+        self.db.run("INSERT INTO login_links(digest, user_id, scopes, next, created_by, created_at, expires_at)"
+                    " VALUES(?,?,?,?,?,?,?)",
+                    (hash_key(token), user_id, ",".join(s for s in SCOPES if s in scopes), next_path, created_by,
+                     now, now + ttl_seconds))
+        return {"token": token,
+                "expires_at": datetime.fromtimestamp(int(now + ttl_seconds), timezone.utc).isoformat()}
+
+    def redeem_login_link(self, token: str) -> Optional[dict]:
+        """The session for a link's token, once: ``{token, expires_at, next, user}`` or None
+        (unknown, used, or out of time)."""
+        if not token or len(token) > 200:
+            return None
+        digest = hash_key(token)
+        now = time.time()
+        if self.db.run("UPDATE login_links SET used_at=? WHERE digest=? AND used_at IS NULL AND expires_at>=?",
+                       (now, digest, now)) != 1:
+            return None
+        row = self.db.one("SELECT * FROM login_links WHERE digest=?", (digest,))
+        user = self.get_user(row["user_id"]) if row else None
+        if not user:
+            return None
+        session = self.open_session(user, scopes=set(row["scopes"].split(",")) if row["scopes"] else set())
+        return {"token": session["token"], "expires_at": session["expires_at"], "next": row["next"],
+                "user": self.public_user(user)}
 
     # ---- API keys ----
     @staticmethod

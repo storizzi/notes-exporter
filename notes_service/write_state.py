@@ -5,6 +5,8 @@
 * ``changes``: when each change to Notes was made (updates, new notes, deletes — not the
   backups the service makes itself), kept for a day, so the mass-change limits
   (``write_max_changes_per_hour`` / ``_per_day``) survive a restart;
+* ``requests``: when each client asked for writes (made or held), for the approval list's
+  batch rule (``write_hold_batch_over``), kept for ``write_hold_batch_seconds``;
 * ``backup_folders``: every folder path the service has made backups in
   (``["FunHoard Backups", "Food", "Baking"]``, with its account), so exports leave them out
   (``write_backup_export`` off) — the exporter only matches whole folder paths.
@@ -52,10 +54,11 @@ class WriteState:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            return {"changes": [], "backup_folders": []}
+            return {"changes": [], "requests": [], "backup_folders": []}
         if not isinstance(data, dict):
-            return {"changes": [], "backup_folders": []}
+            return {"changes": [], "requests": [], "backup_folders": []}
         data.setdefault("changes", [])
+        data.setdefault("requests", [])
         data.setdefault("backup_folders", [])
         return data
 
@@ -67,11 +70,11 @@ class WriteState:
             f.write("\n")
         os.replace(tmp, self.path)
 
-    def _changes(self, data: dict, now: datetime) -> List[datetime]:
+    def _changes(self, data: dict, now: datetime, keep: timedelta = DAY) -> List[datetime]:
         out = []
         for c in data.get("changes") or []:
             dt = _parse(c)
-            if dt and now - dt < DAY:
+            if dt and now - dt < keep:
                 out.append(dt)
         return sorted(out)
 
@@ -113,11 +116,42 @@ class WriteState:
             changes = self._changes(self._read(), now)
         return self._over(now, [c for c in changes if now - c < HOUR], changes, per_hour, per_day)
 
-    def record_change(self) -> None:
+    def record_change(self, keep_hours: int = 24) -> None:
+        now = self._clock()
+        keep = max(DAY, timedelta(hours=keep_hours))
+        with self._lock:
+            data = self._read()
+            data["changes"] = [c.isoformat() for c in self._changes(data, now, keep)] + [now.isoformat()]
+            self._write(data)
+
+    def changes_within(self, hours: int) -> int:
+        """Changes made in the last ``hours`` (the approval list's count rule)."""
+        now = self._clock()
+        with self._lock:
+            return len(self._changes(self._read(), now, timedelta(hours=hours)))
+
+    # ---- requests per client (the approval list's batch rule) ----
+    def requests_within(self, by: str, seconds: int) -> int:
         now = self._clock()
         with self._lock:
             data = self._read()
-            data["changes"] = [c.isoformat() for c in self._changes(data, now)] + [now.isoformat()]
+        n = 0
+        for r in data.get("requests") or []:
+            dt = _parse(r.get("at"))
+            if r.get("by") == by and dt and (now - dt).total_seconds() < seconds:
+                n += 1
+        return n
+
+    def record_request(self, by: str, keep_seconds: int) -> None:
+        now = self._clock()
+        with self._lock:
+            data = self._read()
+            kept = []
+            for r in data.get("requests") or []:
+                dt = _parse(r.get("at"))
+                if dt and (now - dt).total_seconds() < keep_seconds:
+                    kept.append(r)
+            data["requests"] = kept + [{"at": now.isoformat(), "by": by}]
             self._write(data)
 
     # ---- backup folders ----

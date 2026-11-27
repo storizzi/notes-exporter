@@ -46,8 +46,12 @@ def calls(writer):
     return json.loads(writer.read_text()).get("calls", []) if writer.exists() else []
 
 
-def allow(ctx):
-    ctx.settings.update({"allow_writes": True})
+HOLD_RULES_OFF = {"write_hold_batch_over": 0, "write_hold_count_over": 0, "write_hold_change_percent": 0}
+
+
+def allow(ctx, holds=False):
+    """Writing on; the approval list's rules off unless ``holds`` (test_service_approvals.py tests them)."""
+    ctx.settings.update({"allow_writes": True, **({} if holds else HOLD_RULES_OFF)})
 
 
 def body(**kw):

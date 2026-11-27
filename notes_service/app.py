@@ -22,6 +22,7 @@ from .runs import RunBusy, RunError, RunManager, RunStore, read_events
 from .scheduler import Scheduler
 from .settings import CLIENT_READ_ONLY, RUN_FORMATS, SettingsError, SettingsStore, export_root_state
 from .updates import UpdateManager, UpdateRefused
+from .approvals import detail as approval_detail, html_text, summary as approval_summary
 from .writes import FEATURES, WriteManager, WriteRefused
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -58,7 +59,8 @@ class Context:
         self.writes = WriteManager(
             config, load_settings=self.settings.load, note_entry=self._note_entry,
             known_folder=self._known_folder, export_root=lambda: self.settings.load().export_root,
-            running_run_id=lambda: self.manager.running_run_id, start_run=self._export_folder)
+            running_run_id=lambda: self.manager.running_run_id, start_run=self._export_folder,
+            note_text=self._note_text)
         self.updates = UpdateManager(config, running_run_id=lambda: self.manager.running_run_id)
 
     def _note_entry(self, note_id: str) -> Optional[dict]:
@@ -67,6 +69,22 @@ class Context:
         except ValueError:
             return None
         return self.exports.note(view, note_id) if view else None
+
+    def _note_text(self, entry: dict) -> Optional[str]:
+        """The note's text as the export has it now — its Markdown, else plain text, else the
+        HTML's words — for the approval list's before / after (None when none can be read)."""
+        outputs = (entry or {}).get("outputs") or {}
+        for fmt in ("md", "text", "html", "raw"):
+            rel = (outputs.get(fmt) or {}).get("path")
+            if not rel:
+                continue
+            try:
+                path = self.exports.resolve(rel)
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except (PathRefused, OSError, ValueError):
+                continue
+            return html_text(text) if fmt in ("html", "raw") else text
+        return None
 
     def _known_folder(self, account: str, folders: List[str]) -> bool:
         """Whether the export holds a note in that folder (or under it) of that account (name or id)."""
@@ -148,6 +166,30 @@ class NoteCreate(BaseModel):
     title: str = ""
     export: bool = True
     formats: List[RunFormat] = Field(default_factory=list)  # type: ignore[valid-type]
+
+
+class ApprovalBulk(BaseModel):
+    action: Literal["approve", "reject"]
+    ids: List[str] = Field(default_factory=list)
+    all: bool = False
+
+
+class LoginLinkRequest(BaseModel):
+    next: Optional[str] = None
+
+
+class LoginLinkExchange(BaseModel):
+    token: str
+
+
+def _safe_next(value: str) -> Optional[str]:
+    """A path on this service (``/approvals``, ``/``), or None: never another site."""
+    v = (value or "/").strip()
+    if not v.startswith("/") or v.startswith("//") or "\\" in v or any(c in v for c in "\r\n\t\0") or len(v) > 200:
+        return None
+    if "://" in v.split("?")[0]:
+        return None
+    return v
 
 
 class UserCreate(BaseModel):
@@ -396,24 +438,40 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
         headers = {"Retry-After": str(e.info["retry_after"])} if e.info.get("retry_after") else None
         return JSONResponse({"detail": str(e), **e.info}, status_code=e.status, headers=headers)
 
+    def _client(p: Principal) -> dict:
+        """Who asked, for a held write: the key's name (or the user), never the key."""
+        out = {"label": p.label, "kind": p.kind, "user_id": p.user_id, "username": p.username}
+        if p.kind == "key":
+            row = ctx.auth.find_key(p.key_id) or {}
+            out.update(key_id=p.key_id, name=row.get("name") or p.label)
+        else:
+            out["name"] = p.username
+        return out
+
+    def _written(result: dict, status: int):
+        # A held write is 202 {held: true, approval_id, reason}: accepted, not made.
+        return JSONResponse(result, status_code=202 if result.get("held") else status)
+
     @app.get("/api/writes")
     def write_state(p: Principal = Depends(need("read"))):
-        return dict(ctx.writes.state(), can_write="write" in p.scopes)
+        return dict(ctx.writes.state(), can_write="write" in p.scopes, can_approve="approve" in p.scopes)
 
     @app.post("/api/notes", status_code=201)
     def create_note(body: NoteCreate, p: Principal = Depends(need("write"))):
         try:
-            return ctx.writes.create(account=body.account, folder_path=body.folder_path, markdown=body.markdown,
-                                     title=body.title, by=p.label, export=body.export, formats=list(body.formats))
+            return _written(ctx.writes.create(account=body.account, folder_path=body.folder_path,
+                                              markdown=body.markdown, title=body.title, by=p.label,
+                                              export=body.export, formats=list(body.formats), client=_client(p)), 201)
         except WriteRefused as e:
             return _write_error(e)
 
     @app.put("/api/notes/{note_id:path}")
     def update_note(note_id: str, body: NoteUpdate, p: Principal = Depends(need("write"))):
         try:
-            return ctx.writes.update(note_id, markdown=body.markdown, base_modified=body.base_modified,
-                                     title=body.title, force=body.force, accept_losses=body.accept_losses,
-                                     by=p.label, export=body.export, formats=list(body.formats), backup=body.backup)
+            return _written(ctx.writes.update(note_id, markdown=body.markdown, base_modified=body.base_modified,
+                                              title=body.title, force=body.force, accept_losses=body.accept_losses,
+                                              by=p.label, export=body.export, formats=list(body.formats),
+                                              backup=body.backup, client=_client(p)), 200)
         except WriteRefused as e:
             return _write_error(e)
 
@@ -422,10 +480,142 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
                     backup: Optional[Literal["folder", "none"]] = None, force: bool = False, export: bool = True,
                     p: Principal = Depends(need("write"))):
         try:
-            return ctx.writes.delete(note_id, base_modified=base if base is not None else base_modified,
-                                     force=force, backup=backup, by=p.label, export=export)
+            return _written(ctx.writes.delete(note_id, base_modified=base if base is not None else base_modified,
+                                              force=force, backup=backup, by=p.label, export=export,
+                                              client=_client(p)), 200)
         except WriteRefused as e:
             return _write_error(e)
+
+    # ---- the approval list (scope approve; a write key sees only its own held writes) ----
+    def _approver_or_own(p: Principal) -> Principal:
+        if "approve" not in p.scopes and "write" not in p.scopes:
+            raise Refusal(403, "this needs the 'approve' scope (or 'write', for your own held writes)", "scope",
+                          scope="approve")
+        return p
+
+    def _own(p: Principal, item: dict) -> bool:
+        client = item.get("client") or {}
+        if p.kind == "key":
+            return client.get("key_id") == p.key_id
+        return client.get("kind") == "user" and client.get("user_id") == p.user_id
+
+    def _visible(p: Principal, item: dict) -> bool:
+        return "approve" in p.scopes or _own(p, item)
+
+    def _held_items(p: Principal) -> list:
+        items = ctx.writes.approvals.all(ctx.settings.load().write_hold_max_age_days)
+        return [i for i in items if _visible(p, i)]
+
+    @app.get("/api/approvals")
+    def approvals(p: Principal = Depends(principal)):
+        _approver_or_own(p)
+        items = _held_items(p)
+        counts = {"total": len(items), "pending": sum(1 for i in items if i.get("status") == "pending"),
+                  "stale": sum(1 for i in items if i.get("status") == "stale")}
+        for kind in ("update", "create", "delete"):
+            counts[kind] = sum(1 for i in items if i.get("kind") == kind)
+        return {"approvals": [approval_summary(i) for i in items], "counts": counts,
+                "can_approve": "approve" in p.scopes}
+
+    @app.get("/api/approvals/{approval_id}")
+    def approval(approval_id: str, p: Principal = Depends(principal)):
+        _approver_or_own(p)
+        item = ctx.writes.approvals.get(approval_id)
+        if not item or not _visible(p, item):
+            raise Refusal(404, "no such held write", "not_found")
+        return approval_detail(item)
+
+    def _approve_one(approval_id: str, p: Principal, export: Optional[bool] = None):
+        try:
+            result = ctx.writes.approve(approval_id, by=p.label, export=export)
+        except WriteRefused as e:
+            return False, {"detail": str(e), **e.info, "status": e.status}
+        return True, result
+
+    @app.post("/api/approvals/{approval_id}/approve")
+    def approve(approval_id: str, p: Principal = Depends(need("approve"))):
+        ok, result = _approve_one(approval_id, p)
+        if ok:
+            return result
+        status = result.pop("status")
+        return JSONResponse(result, status_code=status)
+
+    @app.post("/api/approvals/{approval_id}/reject")
+    def reject(approval_id: str, p: Principal = Depends(need("approve"))):
+        try:
+            return ctx.writes.reject(approval_id, by=p.label)
+        except WriteRefused as e:
+            return _write_error(e)
+
+    @app.post("/api/approvals/bulk")
+    def approvals_bulk(body: ApprovalBulk, p: Principal = Depends(need("approve"))):
+        items = ctx.writes.approvals.all(ctx.settings.load().write_hold_max_age_days)
+        if body.all:
+            ids = [i["id"] for i in items if body.action == "reject" or i.get("status") == "pending"]
+        else:
+            ids = list(dict.fromkeys(body.ids or []))
+        if not ids and not body.all:
+            raise Refusal(400, "send ids, or all: true", "bad_request")
+        results, folders, accounts, formats = [], set(), set(), set()
+        for approval_id in ids:
+            if body.action == "reject":
+                try:
+                    results.append(dict(ctx.writes.reject(approval_id, by=p.label), ok=True))
+                except WriteRefused as e:
+                    results.append({"approval_id": approval_id, "ok": False, "detail": str(e), **e.info})
+                continue
+            item = ctx.writes.approvals.get(approval_id) or {}
+            # One export afterwards for all of them, not one each (a running export refuses writes).
+            ok, result = _approve_one(approval_id, p, export=False)
+            if ok:
+                if (item.get("request") or {}).get("export", True):
+                    folders.add("/".join(item.get("folder_path") or []))
+                    accounts.add(item.get("account") or "")
+                    formats.update((item.get("request") or {}).get("formats") or [])
+                results.append(dict(result, ok=True))
+            else:
+                result.pop("status", None)
+                results.append(dict(result, approval_id=approval_id, ok=False))
+        run = None
+        if folders:
+            try:
+                run = ctx.manager.start(trigger="api", folders=sorted(f for f in folders if f),
+                                        accounts=sorted(a for a in accounts if a),
+                                        formats=[f for f in formats if f in RUN_FORMATS], requested_by="approve")
+            except RunBusy:
+                run = None
+        return {"results": results, "approved": sum(1 for r in results if r.get("ok") and r.get("approved")),
+                "rejected": sum(1 for r in results if r.get("ok") and r.get("rejected")),
+                "failed": sum(1 for r in results if not r.get("ok")), "run": run}
+
+    # ---- a one-off sign-in link for the web page ----
+    @app.post("/api/auth/login-link")
+    def login_link(request: Request, body: Optional[LoginLinkRequest] = None, p: Principal = Depends(principal)):
+        if not ({"admin", "approve"} & p.scopes):
+            raise Refusal(403, "a sign-in link needs the 'admin' or 'approve' scope", "scope", scope="approve")
+        nxt = _safe_next((body.next if body else None) or "/")
+        if nxt is None:
+            raise Refusal(400, "next must be a path on this service, such as /approvals", "bad_request",
+                          field="next")
+        ttl = ctx.settings.load().login_link_ttl_seconds
+        link = ctx.auth.create_login_link(p.user_id, set(p.scopes), nxt, ttl, p.label)
+        base = str(request.base_url).rstrip("/")
+        # The token is in the fragment: browsers never send it, so it is in no server or proxy log.
+        return {"url": f"{base}/login-link#{link['token']}", "expires_at": link["expires_at"], "next": nxt,
+                "ttl_seconds": ttl}
+
+    @app.post("/api/auth/login-link/exchange")
+    def login_link_exchange(body: LoginLinkExchange, request: Request):
+        ip = _client_ip(request)
+        if ctx.limiter.blocked(ip):
+            raise HTTPException(429, "too many failed sign-ins; try again later")
+        session = ctx.auth.redeem_login_link(body.token)
+        if not session:
+            ctx.limiter.failed(ip)
+            raise Refusal(401, "this sign-in link isn't valid any more (it works once, for a short time)",
+                          "link_invalid")
+        ctx.limiter.succeeded(ip)
+        return session
 
     @app.get("/api/notes/{note_id:path}")
     def note(note_id: str, p: Principal = Depends(need("read"))):
@@ -700,6 +890,16 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
     def index():
         return FileResponse(WEB_DIR / "index.html", media_type="text/html; charset=utf-8",
                             headers={"Cache-Control": "no-cache"})
+
+    @app.get("/approvals", include_in_schema=False)
+    def approvals_page():
+        return index()
+
+    @app.get("/login-link", include_in_schema=False)
+    def login_link_page():
+        # The token arrives in the URL's fragment, which only link.js reads (and then removes).
+        return FileResponse(WEB_DIR / "link.html", media_type="text/html; charset=utf-8",
+                            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
     app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
     return app
