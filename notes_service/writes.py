@@ -476,14 +476,14 @@ class WriteManager:
                 e.info["stale"] = True
             e.info["approval_id"] = approval_id
             raise
-        self.approvals.remove(approval_id)
+        self.approvals.decide(approval_id, "approved", by=by, result=out)
         self._log(by=by, operation="approve", approval_id=approval_id, kind=item["kind"], note_id=item.get("note_id"),
                   ok=True, client=label)
         return dict(out, approval_id=approval_id, approved=True, kind=item["kind"])
 
     def reject(self, approval_id: str, *, by: str) -> dict:
         item = self.approvals.get(approval_id)
-        if not item or not self.approvals.remove(approval_id):
+        if not item or not self.approvals.decide(approval_id, "rejected", by=by):
             raise WriteRefused(404, "no such held write", reason="not_found")
         self._log(by=by, operation="reject", approval_id=approval_id, kind=item["kind"], note_id=item.get("note_id"),
                   ok=True, client=(item.get("client") or {}).get("label"))

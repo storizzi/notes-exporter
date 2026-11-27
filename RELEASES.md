@@ -1,5 +1,6 @@
 # Releases <!-- omit from toc -->
 
+- [27 November 2026 - Release 1.7.1 - What Became of a Held Change](#27-november-2026---release-171---what-became-of-a-held-change)
 - [27 November 2026 - Release 1.7.0 - AI Assistants \& Safer Writing](#27-november-2026---release-170---ai-assistants--safer-writing)
 - [14 November 2026 - Release 1.6.0 - Updates from a Client](#14-november-2026---release-160---updates-from-a-client)
 - [14 November 2026 - Release 1.5.1 - Settings for Clients \& Writing Notes](#14-november-2026---release-151---settings-for-clients--writing-notes)
@@ -12,6 +13,10 @@
 - [6 June 2025 - Release 0.3 - Automated Scheduling \& Output Improvements](#6-june-2025---release-03---automated-scheduling--output-improvements)
 - [10 June 2024 - Release 0.2 - Filename format / other file types](#10-june-2024---release-02---filename-format--other-file-types)
 - [8 December 2023 - Release 0.1 - Initial Release](#8-december-2023---release-01---initial-release)
+
+## 27 November 2026 - Release 1.7.1 - What Became of a Held Change
+
+* **A decided change can still be looked up**: approving or rejecting a held write used to remove it, so a client following its own held change only got a 404 and couldn't tell whether it was made. Now `GET /api/approvals/{id}` answers `status: "approved"` (with `result`: the note's id, `modified` and the backup's id) or `"rejected"`, `decided_at` and `decided_by`, for `write_hold_max_age_days`. The note's texts aren't kept once a change is decided. See [The approval list](SERVICE-API.md#the-approval-list).
 
 ## 27 November 2026 - Release 1.7.0 - AI Assistants & Safer Writing
 

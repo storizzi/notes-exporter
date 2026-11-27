@@ -257,3 +257,38 @@ def test_the_note_text_reader_uses_the_export(svc, export_root):
     assert ctx._note_text(entry).startswith("# Scones")
     gone = "/api/notes/" + quote("x-coredata://TEST/ICNote/zzz", safe="")
     assert client.put(gone, json=body()).status_code in (403, 404)
+
+
+def test_a_decided_write_says_what_became_of_it_without_its_texts(svc, writer, export_root, tmp_path):
+    client, ctx = svc
+    holds(ctx, write_hold_change_percent=50, write_hold_min_lines=2)
+    long_note(export_root)
+    first = client.put(URL, json=body(markdown=OTHER)).json()["approval_id"]
+    assert client.post(f"/api/approvals/{first}/approve").status_code == 200
+    gone = client.get(f"/api/approvals/{first}").json()
+    assert gone["status"] == "approved" and gone["decided_at"] and gone["result"]["backup_note_id"]
+    assert "before" not in gone and "after" not in gone and "request" not in gone
+    long_note(export_root)
+    second = client.put(URL, json=body(markdown=OTHER, force=True)).json()["approval_id"]
+    assert client.post(f"/api/approvals/{second}/reject").status_code == 200
+    assert client.get(f"/api/approvals/{second}").json()["status"] == "rejected"
+    assert client.get("/api/approvals").json()["counts"]["total"] == 0      # the list holds only waiting ones
+    assert client.post(f"/api/approvals/{second}/reject").status_code == 404  # decided once
+    assert client.post(f"/api/approvals/{first}/approve").status_code == 404
+    kept = (ctx.config.home / "approvals" / "decided" / f"{first}.json").read_text()
+    assert "Bananas" not in kept and "Flour" not in kept                    # no note text kept
+
+
+def test_decided_writes_age_out(svc, writer, export_root):
+    client, ctx = svc
+    holds(ctx, write_hold_change_percent=50, write_hold_min_lines=2, write_hold_max_age_days=3)
+    long_note(export_root)
+    aid = client.put(URL, json=body(markdown=OTHER)).json()["approval_id"]
+    client.post(f"/api/approvals/{aid}/reject")
+    path = ctx.config.home / "approvals" / "decided" / f"{aid}.json"
+    item = json.loads(path.read_text())
+    item["decided_at"] = "2020-01-01T00:00:00+00:00"
+    path.write_text(json.dumps(item))
+    client.get("/api/approvals")
+    assert not path.exists()
+    assert client.get(f"/api/approvals/{aid}").status_code == 404

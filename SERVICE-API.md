@@ -726,6 +726,12 @@ note's text before and after, as the export folder does), so they survive a rest
   don't apply to an approved write. Answers what the write answers, plus `approval_id`,
   `approved: true`, `kind`; the folder is exported as the write asked.
 * `POST /api/approvals/{id}/reject` drops it (the client keeps its own copy) → `{approval_id, rejected: true}`.
+* **What became of it** (1.7.1): a decided write leaves the list, but `GET /api/approvals/{id}`
+  still answers `{id, kind, note_id, …, status: "approved"|"rejected", decided_at, decided_by,
+  result}` (`result`: `{note_id, modified, backup_note_id}` for an approved one) — without the
+  note's texts, which aren't kept once it's decided — so a client that held a change learns the
+  outcome however it was decided (on the web page, by another client). Kept for
+  `write_hold_max_age_days`, then 404. Approving or rejecting it again is 404.
 * `POST /api/approvals/bulk {action: "approve"|"reject", ids: [...] | all: true}` → `{results:
   [{approval_id, ok, …}], approved, rejected, failed, run}`. `all` approves every **pending**
   item (rejects every item); approved writes are exported in **one** run afterwards.

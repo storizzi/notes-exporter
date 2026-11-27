@@ -138,6 +138,66 @@ class ApprovalStore:
             except (OSError, AttributeError):
                 return False
 
+    # A decided write is kept for a while without its texts, so a client that held a change can ask
+    # what became of it (GET /api/approvals/{id} → status approved | rejected) — also when someone
+    # else decided it on the web page.
+    @property
+    def decided_folder(self) -> Path:
+        return self.folder / "decided"
+
+    def decide(self, approval_id: str, status: str, *, by: str, result: Optional[dict] = None) -> bool:
+        """Mark a held write approved or rejected: it leaves the list, and its record (no note text)
+        moves to ``decided/``. False when it isn't held (any more)."""
+        path = self._path(approval_id)
+        with self._lock:
+            if not path or not path.is_file():
+                return False
+            try:
+                item = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                item = {"id": approval_id}
+            kept = {k: item.get(k) for k in ("id", "kind", "note_id", "account", "folder_path", "title", "base",
+                                             "reason", "rule", "change_percent", "created_at", "client")}
+            kept.update(status=status, decided_at=self._clock().isoformat(), decided_by=by,
+                        result={k: (result or {}).get(k) for k in ("note_id", "modified", "backup_note_id")}
+                        if status == "approved" else None)
+            folder = self.decided_folder
+            folder.mkdir(parents=True, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=str(folder), prefix=".decided.", suffix=".json")
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(kept, f, indent=1)
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, folder / f"{approval_id}.json")
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            return True
+
+    def decided(self, approval_id: str) -> Optional[dict]:
+        if not _ID.match(approval_id or ""):
+            return None
+        path = self.decided_folder / f"{approval_id}.json"
+        try:
+            return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+        except (OSError, ValueError):
+            return None
+
+    def prune_decided(self, max_age_days: int) -> None:
+        if not max_age_days or not self.decided_folder.is_dir():
+            return
+        cutoff = self._clock() - timedelta(days=max_age_days)
+        for path in self.decided_folder.glob("*.json"):
+            try:
+                at = datetime.fromisoformat(json.loads(path.read_text(encoding="utf-8")).get("decided_at"))
+            except (OSError, ValueError, TypeError):
+                at = None
+            if at is None or at < cutoff:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+
     def all(self, max_age_days: int = 0) -> List[dict]:
         """Every held write, oldest first; older than ``max_age_days`` (when set) are dropped."""
         out = []
@@ -158,6 +218,7 @@ class ApprovalStore:
                     self.remove(item.get("id", ""))
                     continue
             out.append(item)
+        self.prune_decided(max_age_days)
         return sorted(out, key=lambda i: (i.get("created_at") or "", i.get("id")))
 
     def count(self) -> int:

@@ -532,7 +532,13 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
     def approval(approval_id: str, p: Principal = Depends(principal)):
         _approver_or_own(p)
         item = ctx.writes.approvals.get(approval_id)
-        if not item or not _visible(p, item):
+        if not item:
+            # Decided already (here or by someone else): what became of it, without the texts.
+            gone = ctx.writes.approvals.decided(approval_id)
+            if gone and _visible(p, gone):
+                return gone
+            raise Refusal(404, "no such held write", "not_found")
+        if not _visible(p, item):
             raise Refusal(404, "no such held write", "not_found")
         return approval_detail(item)
 
