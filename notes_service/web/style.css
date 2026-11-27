@@ -23,7 +23,7 @@ label { display: block; margin: 8px 0; }
 label.check { display: flex; gap: 8px; align-items: center; }
 input, select, textarea { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px;
                           background: var(--bg); color: var(--fg); max-width: 100%; }
-input:not([type=checkbox]), textarea { width: 100%; }
+input:not([type=checkbox]):not([type=radio]), textarea { width: 100%; }
 fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 10px 0; }
 button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--accent);
          background: var(--accent); color: #000; cursor: pointer; }
@@ -43,3 +43,4 @@ th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line
 code { overflow-wrap: anywhere; }
 .status-ok { color: var(--ok); } .status-failed, .status-cancelled { color: var(--err); }
 .status-running, .status-partial { color: var(--accent); }
+pre.snippet { font-size: 12px; background: var(--bg); padding: 8px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }

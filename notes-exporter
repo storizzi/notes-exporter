@@ -1,5 +1,5 @@
 #!/bin/zsh
-# notes-exporter - the service command line (serve, user, apikey, service).
+# notes-exporter - the service command line (serve, user, apikey, permission, service, mcp).
 # See SERVICE-API.md. Uses NOTES_SERVICE_PYTHON, else .venv/bin/python, else python3.
 SCRIPT_DIR="${0:A:h}"
 PY="${NOTES_SERVICE_PYTHON:-}"

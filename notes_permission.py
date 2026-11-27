@@ -19,6 +19,8 @@ Prints one word and exits with:
     3 denied        - the user (or a profile) refused it
     4 not-running   - Notes is not running, so macOS cannot tell yet
     5 unknown       - the check itself failed (not macOS, API missing)
+    5 timeout       - macOS didn't answer within --timeout seconds
+                      (NOTES_PERMISSION_CHECK_TIMEOUT_SECONDS, default 10)
 """
 
 import argparse
@@ -27,6 +29,7 @@ import ctypes.util
 import os
 import subprocess
 import sys
+import threading
 import time
 
 NOTES_BUNDLE_ID = b"com.apple.Notes"
@@ -81,6 +84,32 @@ def launch_notes() -> None:
                    stdin=subprocess.DEVNULL)
 
 
+class Timeout(Exception):
+    pass
+
+
+def check_within(seconds: float, checker=None) -> int:
+    """check(), but give up after ``seconds``: macOS has been seen to block the call
+    (with a dialog pending), and an export must not wait for ever."""
+    result = {}
+    checker = checker or check
+
+    def run():
+        try:
+            result["status"] = checker()
+        except Exception as e:  # passed on to the caller
+            result["error"] = e
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(seconds if seconds > 0 else None)
+    if t.is_alive():
+        raise Timeout(seconds)
+    if "error" in result:
+        raise result["error"]
+    return result["status"]
+
+
 def ask(wait_seconds: float, poll_seconds: float, checker=check, launcher=launch_notes,
         clock=time.monotonic, sleep=time.sleep) -> int:
     """Ask (showing the macOS dialog if needed); open Notes first if it isn't running."""
@@ -102,11 +131,19 @@ def main(argv=None) -> int:
     p.add_argument("--ask", action="store_true", help="let macOS show its dialog (someone must click Allow)")
     p.add_argument("--wait", type=float, default=float(os.environ.get("NOTES_PERMISSION_LAUNCH_WAIT_SECONDS") or 20),
                    help="with --ask: seconds to wait for Notes to start")
+    p.add_argument("--timeout", type=float,
+                   default=float(os.environ.get("NOTES_PERMISSION_CHECK_TIMEOUT_SECONDS") or 10),
+                   help="without --ask: give up after this many seconds (0 = wait)")
     p.add_argument("--poll", type=float, default=float(os.environ.get("NOTES_PERMISSION_POLL_SECONDS") or 0.5))
     args = p.parse_args(argv)
     try:
-        status = ask(args.wait, args.poll) if args.ask else check()
+        status = ask(args.wait, args.poll) if args.ask else check_within(args.timeout)
         word, code = describe(status)
+    except Timeout:
+        print("timeout")
+        sys.stdout.flush()
+        os._exit(5)  # the stuck call is in a thread that can't be stopped
+        return 5
     except Exception as e:  # not macOS, or the API is unavailable
         print(f"unknown ({e})")
         return 5

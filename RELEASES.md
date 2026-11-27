@@ -1,6 +1,6 @@
 # Releases <!-- omit from toc -->
 
-- [Unreleased - 1.6.1 - Export folder on another drive](#unreleased---161---export-folder-on-another-drive)
+- [Unreleased - 1.7.0 - AI Assistants (MCP)](#unreleased---170---ai-assistants-mcp)
 - [14 November 2026 - Release 1.6.0 - Updates from a Client](#14-november-2026---release-160---updates-from-a-client)
 - [14 November 2026 - Release 1.5.1 - Settings for Clients \& Writing Notes](#14-november-2026---release-151---settings-for-clients--writing-notes)
 - [11 November 2026 - Release 1.5.0 - Service API \& EPUB](#11-november-2026---release-150---service-api--epub)
@@ -13,8 +13,16 @@
 - [10 June 2024 - Release 0.2 - Filename format / other file types](#10-june-2024---release-02---filename-format--other-file-types)
 - [8 December 2023 - Release 0.1 - Initial Release](#8-december-2023---release-01---initial-release)
 
-## Unreleased - 1.6.1 - Export folder on another drive
+## Unreleased - 1.7.0 - AI Assistants (MCP)
 
+### Upgrading from 1.6.0 <!-- omit from toc -->
+
+Restart the service (or let a client update and restart it) to load the new endpoints and the web page's new tabs. Then connect an assistant with `./setup_mcp.zsh` or the web page's **MCP** tab ([MCP.md](MCP.md)). Nothing new is installed: the MCP server uses only Python's standard library.
+
+* **An MCP server for AI assistants**: `notes-exporter mcp serve` lets Claude Code, Claude Desktop or any MCP client (stdio) search and read the exported notes (`search_notes` over titles, folders, tags and text; `list_notes`, `list_folders`, `read_note`, `get_attachment` for pictures), see and start exports (`notes_status`, `list_runs`, `get_run`, `start_export`, `cancel_export`), and — only with the `write` scope and while the admin allows writes — change and create notes (`update_note`, `create_note`). It is a client of the service with an API key of its own, so the scopes, the write fences and the conflict checks apply unchanged; the tools a client sees follow the key's scopes, and `--read-only` offers only the reading ones. Standard library only. See [MCP.md](MCP.md).
+* **Setting it up from the command line**: `./setup_mcp.zsh` (or `notes-exporter mcp setup`) makes a key named `MCP` (read, run; `--write`, `--no-run`), writes it into `~/Library/Application Support/notes-exporter/mcp.env` (mode 0600, never printed, never in a client's config), registers the server with Claude Code (`claude mcp add --scope user`) and Claude Desktop (its config backed up first), or prints the entry for another client, and checks it. Running it again rotates the key. `--url … --key-stdin` for a service on another Mac. `notes-exporter mcp check`, `notes-exporter mcp uninstall`.
+* **…or from the web page**: a new **MCP** tab (admins) makes the key — kept in the key file on this Mac, or shown once for a client on another computer — and shows the `claude mcp add` line and the JSON to paste, with Copy buttons, and which key the file holds. `GET` / `POST /api/admin/mcp` ([SERVICE-API.md](SERVICE-API.md#mcp)).
+* **Change my password on the web page**: a **My account** tab for every signed-in user (the endpoint existed, the page had no form). It signs you out everywhere, so you sign in again with the new one.
 * **An export folder on a drive that isn't connected is refused** instead of created: with `export_root` under `/Volumes/<drive>/…` and that drive not mounted, a run fails saying so (before, the folder was made on the internal disk and the whole export written there). `GET /api/status` answers `export_root_problem` and the web page shows it.
 * **Can the service write there?** `GET /api/status` probes the export folder by creating and removing a hidden file and reports `export_root_access` (`ok`, `denied`, `not_writable`, `missing`, `unknown`) and `export_root_reason`. `denied` is macOS's privacy settings refusing the service (*Operation not permitted*), and `export_root_problem` then names the Python to allow under System Settings → Privacy & Security → Full Disk Access (or Files and Folders for a drive). A run into a folder it can't write fails at once saying so.
 * **The export folder's state on the settings endpoints**: `GET` / `PUT /api/admin/settings` add `export_root_ok`, `export_root_problem`, `export_root_access` and `export_root_reason` (ignored when sent back), and `/api/settings` has them beside `settings`.
@@ -22,6 +30,7 @@
 * **Asking for the Notes permission without waiting**: `POST /api/admin/permission/request?wait=false` (or `{"wait": false}`) answers 202 at once; the permission says `requesting: true` (also in `/api/status`) until macOS answers, and `last_request` says how the latest went. Waiting is still the default.
 * **The last runs in `/api/status`**: `last_run_*`, `last_failed_run_*` and `last_success_run_*` (`_id`, `_status`, `_finished_at`, `_message`), so a client needn't read the history to find the failed run.
 * **The lock message no longer blames another export for a refused folder**: when `exportnotes.zsh` can't create its lock (`<root>/.notes-exporter.lock`) at all, it exits 1 with the real error — "cannot create the lock in <folder>: Operation not permitted — macOS is refusing it: … Full Disk Access …" — instead of "another export (pid unknown) is using …", which hid a permission failure. Only a lock folder that really exists is another export (exit 4).
+* **A permission check macOS doesn't answer no longer hangs the export**: `notes_permission.py` gives up after `NOTES_PERMISSION_CHECK_TIMEOUT_SECONDS` (default 10; `--timeout`) and prints `timeout`. On this Mac it was seen to block with a "wants to control Notes" dialog waiting. `exportnotes.zsh` then fails a `--non-interactive` (scheduled or service) run at once with exit 3, "look for a dialog on the Mac"; a run from a terminal says so and carries on.
 
 ## 14 November 2026 - Release 1.6.0 - Updates from a Client
 

@@ -326,6 +326,7 @@ Fractional values supported: `1.5d`, `0.5h`.
 | `NOTES_EXPORT_JSON_LOG` | — | `-` (stdout) or a file for JSON Lines events |
 | `NOTES_EXPORT_NON_INTERACTIVE` | `false` | Never wait at a permission prompt (exit 3) |
 | `NOTES_EXPORT_SKIP_PERMISSION_CHECK` | `false` | Skip the automation pre-check |
+| `NOTES_PERMISSION_CHECK_TIMEOUT_SECONDS` | `10` | Give up on the automation pre-check after this long (`timeout`) |
 | `NOTES_EXPORT_PYTHON` | — | Python interpreter to use |
 
 ### Qdrant

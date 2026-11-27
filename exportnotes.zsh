@@ -463,6 +463,16 @@ if [[ "${NOTES_EXPORT_EXTRACT_DATA}" == "true" ]]; then
                     exit $EXIT_PERMISSION
                 fi
                 echo "macOS will ask for permission to control Notes; click Allow." ;;
+            timeout)
+                # macOS didn't answer: usually a permission dialog waiting on screen
+                if [[ "$NOTES_EXPORT_NON_INTERACTIVE" == "true" ]]; then
+                    emit_event result status=failed exit_code:=$EXIT_PERMISSION run_id="$RUN_ID" \
+                        message="macOS didn't answer whether this app may control Notes; look for a dialog on the Mac"
+                    echo "Error: macOS didn't answer whether this app may control Notes (non-interactive run)." >&2
+                    echo "Look for a permission dialog on the Mac, answer it, then run the export again." >&2
+                    exit $EXIT_PERMISSION
+                fi
+                echo "macOS didn't answer the permission check; if a dialog is waiting, click Allow." ;;
         esac
     fi
 

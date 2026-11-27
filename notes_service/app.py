@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from . import API_VERSION, MANIFEST_VERSION, __version__
 from .auth import ROLES, SCOPES, AuthError, AuthStore, LoginLimiter, Principal
-from .config import Config
+from .config import Config, default_home
 from .exports import ExportReader, PathRefused, content_type, iter_file, parse_range
 from .permissions import PermissionChecker, PermissionRequestBusy
 from .runs import RunBusy, RunError, RunManager, RunStore, read_events
@@ -23,6 +23,7 @@ from .scheduler import Scheduler
 from .settings import CLIENT_READ_ONLY, RUN_FORMATS, SettingsError, SettingsStore, export_root_state
 from .updates import UpdateManager, UpdateRefused
 from .writes import WriteManager, WriteRefused
+from . import mcp_client
 
 WEB_DIR = Path(__file__).parent / "web"
 # Query parameters that look like credentials: refused, so a key never ends up in a log or history.
@@ -195,6 +196,16 @@ class KeyCreate(BaseModel):
     scopes: List[Scope] = Field(default_factory=lambda: ["read"])  # type: ignore[valid-type]
     owner_user_id: Optional[str] = None
     expires_at: Optional[str] = None
+
+
+class McpKeyCreate(BaseModel):
+    """A key for the MCP server: kept in the state directory's mcp.env (clients on this Mac read it),
+    or shown once for a client on another computer."""
+    name: str = mcp_client.DEFAULT_KEY_NAME
+    scopes: List[Literal["read", "run", "write"]] = Field(default_factory=lambda: ["read", "run"])
+    keep: Literal["env_file", "show"] = "env_file"
+    expires_at: Optional[str] = None
+    read_only: bool = False
 
 
 def _client_ip(request: Request) -> str:
@@ -676,6 +687,56 @@ def create_app(config: Optional[Config] = None, permissions: Optional[Permission
         if not ctx.auth.delete_key(key_id):
             raise HTTPException(404, "no such API key")
         return {"ok": True}
+
+    # ---- MCP (MCP.md): a key for the MCP server and what to paste into a client ----
+    def _mcp_env_file():
+        return mcp_client.default_env_file(config.home)
+
+    def _mcp_snippets(read_only: bool = False) -> dict:
+        url = config.local_url()
+        args = mcp_client.server_args(url=None if url == "http://127.0.0.1:8790" else url,
+                                      env_file=None if config.home == default_home() else str(_mcp_env_file()),
+                                      read_only=read_only)
+        return mcp_client.snippets(mcp_client.DEFAULT_SERVER_NAME, args)
+
+    @app.get("/api/admin/mcp")
+    def mcp_state(p: Principal = Depends(need("admin"))):
+        path = _mcp_env_file()
+        key = mcp_client.read_env_key(path)
+        record = ctx.auth.key_record(key) if key else None
+        return {"env_file": str(path), "env_file_present": path.exists(), "key": record,
+                "key_problem": None if record else ("no key yet" if not key else
+                                                    "the key in the file has been revoked or has expired"),
+                "url": config.local_url(), "clients": _mcp_snippets()}
+
+    @app.post("/api/admin/mcp", status_code=201)
+    def mcp_key(body: McpKeyCreate, request: Request, p: Principal = Depends(need("admin"))):
+        scopes = sorted(set(body.scopes) | {"read"}, key=["read", "run", "write"].index)
+        try:
+            record, key = ctx.auth.create_key(body.name, scopes, p.user_id, body.expires_at)
+        except AuthError as e:
+            raise HTTPException(400, str(e))
+        out = {"api_key": record}
+        if body.keep == "show":
+            origin = str(request.base_url).rstrip("/")
+            out.update(key=key, remote_setup=f"./notes-exporter mcp setup --url {origin} --key-stdin",
+                       clients=_mcp_snippets(body.read_only))
+            return out
+        from .envfile import write_env_var
+        path = _mcp_env_file()
+        try:
+            write_env_var(str(path), mcp_client.KEY_VAR, key)
+        except (OSError, ValueError) as e:
+            ctx.auth.delete_key(record["id"])
+            raise HTTPException(500, f"couldn't write {path} ({e.__class__.__name__}); the key was not kept")
+        # The file holds one key: the older ones of this name (this admin's) are revoked, so running it
+        # again rotates the key.
+        old = [k for k in ctx.auth.list_keys()
+               if k["name"] == record["name"] and k["owner_user_id"] == p.user_id and k["id"] != record["id"]]
+        for k in old:
+            ctx.auth.delete_key(k["id"])
+        out.update(env_file=str(path), revoked=[k["prefix"] for k in old], clients=_mcp_snippets(body.read_only))
+        return out
 
     @app.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
     def unknown(rest: str):

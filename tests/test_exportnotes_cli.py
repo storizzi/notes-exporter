@@ -213,8 +213,11 @@ def test_refused_automation_exits_3(env):
 def test_non_interactive_never_waits_for_a_permission_prompt(env):
     """The real check: on a Mac that has not granted automation it says 'prompt'."""
     write_library(env, [_note(1, "Scones")])
-    check = subprocess.run([sys.executable, str(REPO / "notes_permission.py")],
-                           capture_output=True, text=True)
+    try:   # the real check: on some macOS versions it never answers for this process, so give up
+        check = subprocess.run([sys.executable, str(REPO / "notes_permission.py")],
+                               capture_output=True, text=True, timeout=20)
+    except subprocess.TimeoutExpired:
+        pytest.skip("notes_permission.py didn't answer within 20 s here")
     if check.stdout.strip() not in ("prompt", "denied"):
         pytest.skip(f"Notes automation is '{check.stdout.strip()}' here")
     r = run(env, "--non-interactive", "--json-log",
@@ -224,6 +227,31 @@ def test_non_interactive_never_waits_for_a_permission_prompt(env):
     assert any(e["type"] == "permission" for e in evs)
     assert evs[-1]["exit_code"] == 3
     assert not (env["root"] / "raw").exists()  # osascript was never started
+
+
+@pytest.mark.parametrize("interactive", [False, True])
+def test_a_permission_check_macos_does_not_answer(env, interactive):
+    """notes_permission.py gave up ('timeout'): a scheduled run fails at once, a run from a
+    terminal says so and carries on."""
+    write_library(env, [_note(1, "Scones")])
+    py = env["tmp"] / "python"
+    py.write_text(f'#!/bin/sh\ncase "$1" in *notes_permission.py) echo timeout; exit 5 ;; esac\n'
+                  f'exec "{sys.executable}" "$@"\n')
+    py.chmod(0o755)
+    e = dict(env["env"], NOTES_EXPORT_SKIP_PERMISSION_CHECK="false")
+    cmd = ["zsh", str(SCRIPT), "--python", str(py), "--root-dir", str(env["root"]),
+           "--filename-format", "&title", "--json-log"] + ([] if interactive else ["--non-interactive"])
+    r = subprocess.run(cmd, env=e, capture_output=True, text=True, timeout=120)
+    evs = events_of(r)
+    assert {"type": "permission", "state": "timeout"}.items() <= next(
+        x for x in evs if x["type"] == "permission").items()
+    if interactive:
+        assert r.returncode == 0, r.stderr
+        assert "didn't answer the permission check" in r.stdout + r.stderr
+    else:
+        assert r.returncode == 3
+        assert "look for a dialog" in evs[-1]["message"]
+        assert not (env["root"] / "raw").exists()
 
 
 def test_lock_held_exits_4_and_stale_lock_is_taken(env):

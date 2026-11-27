@@ -23,6 +23,7 @@ manifest version 1.
   - [Runs](#runs)
   - [Admin: settings, users, API keys](#admin-settings-users-api-keys)
   - [Refusal reasons](#refusal-reasons)
+  - [MCP](#mcp)
 - [Updates](#updates)
 - [Formats and EPUB books](#formats-and-epub-books)
 - [Change detection for clients](#change-detection-for-clients)
@@ -76,6 +77,7 @@ notes-exporter apikey create --name NAME [--scopes read,run,admin] [--owner USER
 notes-exporter apikey list | revoke ID|PREFIX
 notes-exporter permission status [--refresh] | request   [--as ADMIN] [--here]
 notes-exporter service install [--replace-legacy] [--dry-run] | uninstall | status [--json]
+notes-exporter mcp serve | setup | check | uninstall     # the MCP server for AI assistants (MCP.md)
 ```
 
 **Generated passwords.** `--generate-password` makes a random password (from
@@ -307,6 +309,7 @@ errors: 422 with FastAPI's list form); some also carry a machine-readable
 | PATCH, DELETE | `/admin/users/{id}` | admin | role / password; remove |
 | GET, POST | `/admin/api-keys` | admin | POST returns the key once |
 | DELETE | `/admin/api-keys/{id}` | admin | revoke |
+| GET, POST | `/admin/mcp` | admin | the MCP server's key and client setup ([MCP](#mcp)) |
 | GET | `/` (not under /api) | — | the web UI |
 
 ### Health, setup and sign-in
@@ -543,6 +546,23 @@ API keys: `GET /api/admin/api-keys` → `{api_keys:[{id, name, prefix, scopes,
 owner_user_id, created_at, last_used_at, expires_at}]}`; `POST {name, scopes,
 owner_user_id?, expires_at?}` → 201 `{api_key, key}` — **`key` is only ever in
 this response**; `DELETE /api/admin/api-keys/{id}` revokes it.
+
+### MCP
+
+The web page's **MCP** tab sets up the [MCP server](MCP.md) for AI assistants.
+
+`GET /api/admin/mcp` → `{env_file, env_file_present, key, key_problem, url, clients}`: `key`
+is the public record of the key in the MCP key file (`<state dir>/mcp.env`) while it works,
+else `null` with `key_problem`; `clients` is what to paste into a client —
+`{server_name, command, args, claude_code, json, setup_command}`.
+
+`POST /api/admin/mcp {name?, scopes?, keep?, read_only?, expires_at?}` → **201**. `scopes`
+any of `read, run, write` (`read` always added; default `read, run`), owned by the admin
+asking. `keep: "env_file"` (default) writes the key into the key file (mode 0600, never in the
+answer) and revokes that admin's older keys of the same `name` (default `MCP`), so making it
+again rotates it: `{api_key, env_file, revoked, clients}`. `keep: "show"` returns it **once**
+for a client on another computer and keeps nothing: `{api_key, key, remote_setup, clients}`.
+`read_only` adds `--read-only` to the `clients` command line.
 
 ## Writing notes
 

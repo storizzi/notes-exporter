@@ -69,7 +69,7 @@ async function enterApp() {
 function selectTab(name) {
   document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.panel').forEach((p) => { p.hidden = p.id !== 'tab-' + name; });
-  ({ status: loadStatus, settings: loadSettings, users: loadUsers, keys: loadKeys })[name]();
+  ({ status: loadStatus, settings: loadSettings, users: loadUsers, keys: loadKeys, mcp: loadMcp, account: () => {} })[name]();
 }
 
 // ---- status + runs ----
@@ -372,10 +372,75 @@ async function copyKey() {
   }
 }
 
+// ---- MCP ----
+function showMcpClients(c) {
+  $('#mcp-claude-code').textContent = c.claude_code;
+  $('#mcp-json').textContent = c.json;
+  $('#mcp-setup-cmd').textContent = c.setup_command;
+}
+
+async function loadMcp() {
+  const s = await api('GET', '/admin/mcp');
+  const dl = $('#mcp-state'); dl.replaceChildren();
+  const add = (k, v) => dl.append(el('dt', {}, k), el('dd', {}, v));
+  add('Key file', s.env_file);
+  add('Key', s.key ? `${s.key.name} (${s.key.prefix}…) — ${s.key.scopes.join(', ')}, last used ${when(s.key.last_used_at)}` : s.key_problem);
+  add('Service', s.url);
+  showMcpClients(s.clients);
+}
+
+async function makeMcpKey(ev) {
+  ev.preventDefault(); const f = ev.target;
+  $('#mcp-error').textContent = ''; $('#mcp-ok').textContent = ''; show('#mcp-new-key', false);
+  const keep = f.querySelector('input[name=keep]:checked').value;
+  const body = { name: f.name.value.trim(), keep, read_only: f.read_only.checked,
+    scopes: ['read', ...[...f.querySelectorAll('input[name=scope]:checked')].map((b) => b.value)] };
+  try {
+    const r = await api('POST', '/admin/mcp', body);
+    if (keep === 'show') {
+      $('#mcp-key-value').textContent = r.key; $('#mcp-remote-cmd').textContent = r.remote_setup; show('#mcp-new-key', true);
+      $('#mcp-ok').textContent = `Made ${r.api_key.name} (${r.api_key.prefix}…).`;
+    } else {
+      $('#mcp-ok').textContent = `Made ${r.api_key.name} (${r.api_key.prefix}…) and saved it in ${r.env_file}`
+        + (r.revoked.length ? `; revoked the older ${r.revoked.map((x) => x + '…').join(', ')}` : '') + '. Now connect a client below.';
+      await loadMcp();
+    }
+    showMcpClients(r.clients);
+  } catch (e) { $('#mcp-error').textContent = e.message; }
+}
+
+// Keys made for another computer get their own name, so making the key here again doesn't revoke them.
+function mcpKeepChanged(ev) {
+  const name = $('#mcp-form').name;
+  if (ev.target.value === 'show' && name.value === 'MCP') name.value = 'MCP (other computer)';
+  if (ev.target.value === 'env_file' && name.value === 'MCP (other computer)') name.value = 'MCP';
+}
+
+async function copyFrom(btn) {
+  const src = $(btn.dataset.copy); const text = src.textContent;
+  try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied'; } catch {
+    const r = document.createRange(); r.selectNodeContents(src);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = 'Press ⌘C';
+  }
+  setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+}
+
+// ---- my account ----
+async function changePassword(ev) {
+  ev.preventDefault(); const f = ev.target; $('#password-error').textContent = '';
+  if (f.new1.value !== f.new2.value) { $('#password-error').textContent = 'The new passwords differ.'; return; }
+  try {
+    await api('POST', '/auth/password', { current_password: f.current.value, new_password: f.new1.value });
+  } catch (e) { $('#password-error').textContent = e.message; return; }
+  f.reset(); setToken(null); watching = null;
+  await start();
+  $('#login-ok').textContent = 'Password changed — sign in with the new one.';
+}
+
 // ---- wiring ----
 document.addEventListener('DOMContentLoaded', () => {
   $('#login-form').addEventListener('submit', async (ev) => {
-    ev.preventDefault(); const f = ev.target; $('#login-error').textContent = '';
+    ev.preventDefault(); const f = ev.target; $('#login-error').textContent = ''; $('#login-ok').textContent = '';
     try { const r = await api('POST', '/auth/login', { username: f.username.value, password: f.password.value }); setToken(r.token); f.reset(); start(); } catch (e) { $('#login-error').textContent = e.message; }
   });
   $('#setup-form').addEventListener('submit', async (ev) => {
@@ -395,5 +460,9 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#user-form').addEventListener('submit', addUser);
   $('#key-form').addEventListener('submit', addKey);
   $('#copy-key').addEventListener('click', copyKey);
+  $('#mcp-form').addEventListener('submit', makeMcpKey);
+  document.querySelectorAll('#mcp-form input[name=keep]').forEach((r) => r.addEventListener('change', mcpKeepChanged));
+  document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', () => copyFrom(b)));
+  $('#password-form').addEventListener('submit', changePassword);
   start();
 });

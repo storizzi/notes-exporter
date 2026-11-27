@@ -92,8 +92,32 @@ def test_permission_words(status, word, code):
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS only")
 def test_permission_check_never_prompts():
-    # Whatever this Mac says, the call returns at once with a known status
-    assert isinstance(notes_permission.check(), int)
+    # Whatever this Mac says, the call returns with a known status, or gives up (never waits)
+    try:
+        assert isinstance(notes_permission.check_within(20), int)
+    except notes_permission.Timeout:
+        pytest.skip("macOS didn't answer the permission check within 20 s here")
+
+
+def test_permission_check_gives_up_when_macos_does_not_answer():
+    import threading
+    stuck = threading.Event()
+    with pytest.raises(notes_permission.Timeout):
+        notes_permission.check_within(0.05, checker=lambda: stuck.wait(5))
+    stuck.set()
+    assert notes_permission.check_within(1, checker=lambda: -1744) == -1744
+    with pytest.raises(OSError):
+        notes_permission.check_within(1, checker=lambda: (_ for _ in ()).throw(OSError("no API")))
+
+
+def test_permission_main_prints_timeout_and_exits_5(monkeypatch, capsys):
+    def stuck(seconds, checker=None):
+        raise notes_permission.Timeout(seconds)
+    exits = []
+    monkeypatch.setattr(notes_permission, "check_within", stuck)
+    monkeypatch.setattr(notes_permission.os, "_exit", exits.append)
+    notes_permission.main(["--timeout", "1"])
+    assert capsys.readouterr().out.strip() == "timeout" and exits == [5]
 
 
 # ── trackers ─────────────────────────────────────────────────────────────

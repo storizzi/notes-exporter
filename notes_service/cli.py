@@ -1,4 +1,4 @@
-"""``notes-exporter`` command line: serve, users, API keys, the Notes permission, the LaunchAgent."""
+"""``notes-exporter`` command line: serve, users, API keys, the Notes permission, the LaunchAgent, MCP."""
 
 import argparse
 import getpass
@@ -255,6 +255,11 @@ def cmd_service(args, config: Config) -> int:
     return 0
 
 
+def cmd_mcp(args, config: Config) -> int:
+    from . import mcp_setup
+    return mcp_setup.run(args, config)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="notes-exporter", description="notes-exporter service (see SERVICE-API.md)")
     p.add_argument("--version", action="version", version=f"notes-exporter {__version__}")
@@ -320,6 +325,9 @@ def build_parser() -> argparse.ArgumentParser:
     ss.add_parser("uninstall")
     st = ss.add_parser("status")
     st.add_argument("--json", action="store_true")
+
+    from .mcp_setup import add_parser as add_mcp_parser
+    add_mcp_parser(sub)
     return p
 
 
@@ -330,5 +338,5 @@ def main(argv=None) -> int:
         overrides = {"host": args.host, "port": args.port, "allow_remote": args.allow_remote}
     config = Config.from_env(**overrides)
     handler = {"serve": cmd_serve, "user": cmd_user, "apikey": cmd_apikey, "permission": cmd_permission,
-               "service": cmd_service}[args.command]
+               "service": cmd_service, "mcp": cmd_mcp}[args.command]
     return handler(args, config)

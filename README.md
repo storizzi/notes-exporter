@@ -25,6 +25,7 @@ Works on macOS only (uses AppleScript). Requires the Notes app.
 | **[Technical Reference](./REFERENCE.md)** | Developers | All CLI options, env vars, JSON schemas, file structure |
 | **[Integration Guide](./INTEGRATION.md)** | Other programs | The manifest, JSON Lines events, exit codes, locking |
 | **[Service API](./SERVICE-API.md)** | Other programs, over HTTP | `notes-exporter serve`: runs, schedule, manifest and files, users and API keys |
+| **[AI assistants (MCP)](./MCP.md)** | Claude Code, Claude Desktop, MCP clients | `./setup_mcp.zsh` or the web page's MCP tab: search, read, export and (optionally) edit notes from an assistant |
 
 ## Quick Start
 

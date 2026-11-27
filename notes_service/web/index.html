@@ -33,7 +33,7 @@
       <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
       <button type="submit">Sign in</button>
     </form>
-    <p class="error" id="login-error"></p>
+    <p class="error" id="login-error"></p><p class="ok" id="login-ok"></p>
   </section>
 
   <div id="app" hidden>
@@ -42,6 +42,8 @@
       <button data-tab="settings" class="tab admin-only">Settings</button>
       <button data-tab="users" class="tab admin-only">Users</button>
       <button data-tab="keys" class="tab admin-only">API keys</button>
+      <button data-tab="mcp" class="tab admin-only">MCP</button>
+      <button data-tab="account" class="tab">My account</button>
     </nav>
 
     <section id="tab-status" class="panel">
@@ -140,6 +142,59 @@
         <label>Expires (optional) <input name="expires_at" type="date"></label>
         <button type="submit">Create</button>
         <p class="error" id="key-error"></p>
+      </form>
+    </section>
+
+    <section id="tab-mcp" class="panel" hidden>
+      <div class="card">
+        <h3>AI assistants (MCP)</h3>
+        <p class="muted">Lets Claude Code, Claude Desktop or another MCP client search and read your exported notes and start exports — and, only if you allow it, change notes — through this service, with an API key of its own.</p>
+        <dl id="mcp-state"></dl>
+      </div>
+      <form id="mcp-form" class="card">
+        <h3>Make the MCP key</h3>
+        <fieldset><legend>What the assistant may do</legend>
+          <label class="check"><input type="checkbox" checked disabled> read — search and read notes, see runs</label>
+          <label class="check"><input type="checkbox" name="scope" value="run" checked> run — start and cancel exports</label>
+          <label class="check"><input type="checkbox" name="scope" value="write"> write — change and create notes in Apple Notes (also needs “Allow clients to write notes” in Settings)</label>
+        </fieldset>
+        <fieldset><legend>Where the assistant runs</legend>
+          <label class="check"><input type="radio" name="keep" value="env_file" checked> On this Mac — keep the key in the MCP key file (it is never shown)</label>
+          <label class="check"><input type="radio" name="keep" value="show"> On another computer — show the key once, to copy there</label>
+        </fieldset>
+        <label>Key name <input name="name" value="MCP" required></label>
+        <label class="check"><input type="checkbox" name="read_only"> Connect it read-only (only the reading tools, whatever the key may do)</label>
+        <button type="submit">Make key</button>
+        <p class="muted">Making the key again replaces the one in the key file (the old one is revoked), so clients on this Mac keep working.</p>
+        <p class="error" id="mcp-error"></p><p class="ok" id="mcp-ok"></p>
+      </form>
+      <div class="card" id="mcp-new-key" hidden>
+        <h3>The key — copy it now, it is not shown again</h3>
+        <div class="row"><code id="mcp-key-value"></code><button type="button" data-copy="#mcp-key-value">Copy</button></div>
+        <p>On the other computer, in a copy of notes-exporter, run this and paste the key when it waits:</p>
+        <div class="row"><code id="mcp-remote-cmd"></code><button type="button" data-copy="#mcp-remote-cmd">Copy</button></div>
+        <p class="muted">The service only answers this Mac unless it is started with --allow-remote behind an HTTPS proxy (SERVICE-API.md).</p>
+      </div>
+      <div class="card">
+        <h3>Connect a client on this Mac</h3>
+        <p>Claude Code — run in Terminal:</p>
+        <div class="row"><code id="mcp-claude-code"></code><button type="button" data-copy="#mcp-claude-code">Copy</button></div>
+        <p>Claude Desktop or any other MCP client — add to its configuration (Claude Desktop: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code>, then reopen it):</p>
+        <pre id="mcp-json" class="snippet"></pre>
+        <div class="row"><button type="button" data-copy="#mcp-json">Copy</button></div>
+        <p class="muted">Or do it all from Terminal: <code id="mcp-setup-cmd"></code> makes the key and registers the server with Claude Code and Claude Desktop.</p>
+      </div>
+    </section>
+
+    <section id="tab-account" class="panel" hidden>
+      <form id="password-form" class="card">
+        <h3>Change my password</h3>
+        <label>Current password <input name="current" type="password" autocomplete="current-password" required></label>
+        <label>New password <input name="new1" type="password" autocomplete="new-password" required></label>
+        <label>New password again <input name="new2" type="password" autocomplete="new-password" required></label>
+        <button type="submit">Change password</button>
+        <p class="muted">Changing it signs you out everywhere; sign in again with the new one. If you keep it in the Keychain (Passwords app, “notes-exporter”), update it there too.</p>
+        <p class="error" id="password-error"></p>
       </form>
     </section>
   </div>

@@ -100,7 +100,7 @@ Each line is one object with `type` and `time` (ISO 8601 with offset):
 | `type` | Fields | When |
 |---|---|---|
 | `start` | `version`, `run_id`, `root_dir`, `mode`, `formats`, `manifest_version` | first |
-| `permission` | `state`: `allowed`, `prompt`, `denied`, `not-running`, `unknown(…)` | before reading Notes |
+| `permission` | `state`: `allowed`, `prompt`, `denied`, `not-running`, `timeout`, `unknown(…)` | before reading Notes |
 | `plan` | `stage: "export"`, `folders` | the folders to read are known |
 | `progress` | `stage`, `done`, `total`, `unit` (`folders` or `notes`); export adds `account`, `folder`, `notes_in_folder`, `notes_exported`; conversions add `failed` | throttled to about 4 a second per stage; the first and last always |
 | `stage` | `stage`, `status`: `started`, `finished`, `failed`; `exit_code` on failure | around each pipeline step |
@@ -292,6 +292,10 @@ that the lock really exists.
   checks first without asking (`notes_permission.py`): with
   `--non-interactive` a check that would prompt is exit code 3. Run one
   export interactively while someone is at the Mac to grant it.
+  If macOS doesn't answer the check within
+  `NOTES_PERMISSION_CHECK_TIMEOUT_SECONDS` (default 10) it says `timeout` —
+  usually a permission dialog waiting on screen — and a `--non-interactive`
+  run is exit code 3 too.
   `NOTES_EXPORT_SKIP_PERMISSION_CHECK=true` skips the check.
 - **Full Disk Access (only for `--tags`).** Tags, pinned and checklist flags
   come from a copy of Notes' database, which needs Full Disk Access for the

@@ -343,6 +343,19 @@ class AuthStore:
         return (self.db.one("SELECT * FROM api_keys WHERE id=?", (ref,))
                 or self.db.one("SELECT * FROM api_keys WHERE prefix=?", (ref,)))
 
+    def key_record(self, key: str) -> Optional[dict]:
+        """The public record of a key that still works (not expired, owner still there), else None.
+        Doesn't count as a use."""
+        if not key or not key.startswith(KEY_PREFIX):
+            return None
+        row = self.db.one("SELECT * FROM api_keys WHERE key_hash=?", (hash_key(key),))
+        if not row or not self.get_user(row["owner_user_id"]):
+            return None
+        exp = _parse_iso(row["expires_at"])
+        if exp and exp <= datetime.now(timezone.utc):
+            return None
+        return self.public_key(row)
+
     def delete_key(self, key_id: str) -> bool:
         return bool(self.db.run("DELETE FROM api_keys WHERE id=?", (key_id,)))
 
