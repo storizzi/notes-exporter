@@ -23,6 +23,13 @@ manifest version 1.
   - [Runs](#runs)
   - [Admin: settings, users, API keys](#admin-settings-users-api-keys)
   - [Refusal reasons](#refusal-reasons)
+- [Writing notes](#writing-notes)
+  - [Backups before a change](#backups-before-a-change)
+  - [Deleting a note](#deleting-a-note)
+  - [The mass-change limit](#the-mass-change-limit)
+  - [The approval list](#the-approval-list)
+  - [Write refusals](#write-refusals)
+- [Sign-in links for the web page](#sign-in-links-for-the-web-page)
 - [Updates](#updates)
 - [Formats and EPUB books](#formats-and-epub-books)
 - [Change detection for clients](#change-detection-for-clients)
@@ -254,7 +261,7 @@ Missing or invalid credentials: **401** (`WWW-Authenticate: Bearer`); a valid
 one without the scope an endpoint needs: **403**.
 
 * **Users** have a username, a bcrypt password and a role: `admin` (scopes
-  read, run, settings, write, admin) or `reader` (read, run). The last admin can't be removed or
+  read, run, settings, write, approve, admin) or `reader` (read, run). The last admin can't be removed or
   demoted (409). Resetting a password signs that user out everywhere; removing a
   user removes their API keys.
 * **Sessions**: `POST /api/auth/login` returns a JWT (HS256, signed with a
@@ -272,7 +279,8 @@ one without the scope an endpoint needs: **403**.
 | `run` | start and cancel runs |
 | `settings` | read and change the export settings (`/api/settings`), except where the export is written and whether clients may write |
 | `write` | change and create notes in Apple Notes ([Writing notes](#writing-notes)) — only while the admin has turned on `allow_writes`; not implied by `admin` |
-| `admin` | settings (and moving the export), users, API keys; includes `settings` |
+| `approve` | 1.7.0: see, approve and reject writes held on [the approval list](#the-approval-list), and make [sign-in links](#sign-in-links-for-the-web-page); implied by `admin` |
+| `admin` | settings (and moving the export), users, API keys; includes `settings` and `approve` |
 
 ## Endpoints
 
@@ -291,8 +299,13 @@ errors: 422 with FastAPI's list form); some also carry a machine-readable
 | GET | `/manifest` | read | manifest.json verbatim, ETag / 304 |
 | GET | `/notes`, `/notes/{id}` | read | note entries from the manifest |
 | GET | `/writes` | read | whether writing is on, and whether you may |
-| PUT | `/notes/{id}` | write | change a note from Markdown |
-| POST | `/notes` | write | a new note from Markdown |
+| PUT | `/notes/{id}` | write | change a note from Markdown (a backup first; may be held: 202) |
+| POST | `/notes` | write | a new note from Markdown (may be held: 202) |
+| DELETE | `/notes/{id}?base=` | write | 1.7.0: move a note to Notes' Recently Deleted (may be held: 202) |
+| GET | `/approvals`, `/approvals/{id}` | approve (write: your own) | 1.7.0: writes held for approval; one with before / after / diff |
+| POST | `/approvals/{id}/approve`, `/approvals/{id}/reject`, `/approvals/bulk` | approve | 1.7.0: make or drop held writes |
+| POST | `/auth/login-link` | admin or approve | 1.7.0: a one-off link that opens the web page signed in |
+| POST | `/auth/login-link/exchange` | — | 1.7.0: the link's page swaps its token for a session |
 | GET, HEAD | `/files/{path}` | read | a file of the export, Range / ETag |
 | POST | `/runs` | run | start a run (202), 409 if one is running |
 | GET | `/runs`, `/runs/{id}` | read | run records |
@@ -352,9 +365,22 @@ GET /api/status
   "last_success_run_status": "ok", "last_success_run_finished_at": "…", "last_success_run_message": null,
   "formats": ["html", "md"],                     // the settings' formats
   "epub_books": "none",
-  "version": "1.5.0"
+  "version": "1.5.0",
+  "writes": {                                    // 1.7.0 adds all but allowed
+    "allowed": true,
+    "backup": {"folder": "FunHoard Backups", "required": true, "exported": false},
+    "limits": {"changes_last_hour": 3, "changes_last_day": 12, "max_per_hour": 50, "max_per_day": 200,
+               "limited_until": null},            // when writing opens again while at a limit
+    "holds": {"batch_over": 3, "batch_seconds": 60, "count_over": 5, "window_hours": 24,
+              "changes_in_window": 4, "change_percent": 50, "min_lines": 2, "max_age_days": 0,
+              "held": 2}                         // writes waiting on the approval list
+  }
 }
 ```
+
+`GET /api/health` (no sign-in) and `GET /api/version` also answer `features` (1.7.0):
+`["write", "write_backup", "delete", "write_limit", "approvals", "login_link"]`, so a client
+can tell what this service does before relying on it.
 
 ### Manifest, notes and files
 
@@ -563,22 +589,169 @@ The service can change Apple Notes, behind several fences:
   note is **409** `reason: "losses"` with `losses` in words, until the client sends
   `accept_losses: true` after showing them. Locked and deleted notes are never written (409).
 * A new note goes only into a folder the export already holds notes in (404 otherwise).
+* 1.7.0: **a backup copy before every change** ([below](#backups-before-a-change)),
+  **deleting** to Recently Deleted, a hard **mass-change limit** (429) and **the approval
+  list**, which holds writes that look like a mass change or a big rewrite until someone
+  approves them. All of their settings are the admin's: a `settings` key can read them
+  (they are in `read_only`) but not change them.
 
-`GET /api/writes` → `{allowed, busy, running_run_id, can_write}`.
+`GET /api/writes` → `{allowed, busy, running_run_id, can_write, can_approve, backup, limits,
+holds}` (the last three as in [`/api/status`](#status)'s `writes`).
 
-`PUT /api/notes/{id}` `{markdown, base_modified, title?, force?, accept_losses?, export?, formats?}` →
-`{note_id, modified, run}`. `POST /api/notes` `{account, folder_path, markdown, title?, export?, formats?}`
-→ **201** the same. The Markdown becomes HTML with pandoc; a picture it links is embedded
+`PUT /api/notes/{id}` `{markdown, base_modified, title?, force?, accept_losses?, backup?, export?, formats?}` →
+`{note_id, modified, backup_note_id, run}`. `POST /api/notes` `{account, folder_path, markdown, title?, export?, formats?}`
+→ **201** `{note_id, modified, run}`. A changed `title` renames the note. The Markdown becomes HTML with pandoc; a picture it links is embedded
 when its file lies inside the export folder (anything outside, `..` or a symlink out, is
 left as a link). With `export` (default true) the service then exports that note's folder
 (adding `formats`), and `run` is that run, so the manifest soon has the new version.
 Other errors: 503 `reason: "permission"` (allow the service under Privacy & Security →
 Automation), 404 `not_found`, 504 `timeout`, 501 off macOS.
 
+**A held write** (any of the three) answers **202** instead:
+`{held: true, approval_id, reason, detail, kind, note_id, modified: null, backup_note_id: null, run: null}` —
+nothing has changed in Notes yet. A client that only checks for a 2xx must look at `held`
+(and `features` has `approvals` to tell it may happen).
+
 Each write is appended to `writes.ndjson` in the state directory — when, who, which note,
-the outcome — never the note's text. The work is `notes_write_helper.py` (pandoc, then
+the outcome, the backup's id, whether it was held / approved and by whom — never the note's
+text. The work is `notes_write_helper.py` (pandoc, then
 `osascript notes_write.applescript`) in a subprocess with the exporter's clean environment
 (`NOTES_SERVICE_WRITER_HELPER`, `NOTES_SERVICE_WRITE_TIMEOUT_SECONDS`, default 180).
+
+### Backups before a change
+
+Since 1.7.0 an update first **copies the note as it is now** into a backup folder in Notes,
+in the note's own account: `write_backup_folder` (default `FunHoard Backups`) at the top, and
+beneath it the note's folder path (`FunHoard Backups/Food/Baking`), the folders made when
+missing. The copy is titled with ` (before <local time>)` added — `Scones (before 2026-11-27 14:05)`
+— and its id is answered as `backup_note_id`. **If the backup fails the note isn't changed**:
+**502** `reason: "backup_failed"` (or the Notes refusal itself: `permission`, `timeout`, `locked`).
+
+The request's `backup` is `"folder"` (the default for an update) or `"none"`; `"none"` is
+refused (**403** `reason: "backup_required"`) while the admin's `write_backup_required` is on
+(the default). The backup folders are left out of exports (so out of clients such as
+FunHoard) unless `write_backup_export` is on; the service remembers every backup folder it has
+made in `write_state.json`, because the exporter only skips whole folder paths.
+
+How the copy is made: `notes_write.applescript backup` reads the note's `name` and `body` (the
+HTML Notes gives a script, pictures embedded) and makes a new note with that body in the
+backup folder. So the copy has the text, formatting and pictures; **not** attachments that
+aren't pictures, checklist ticks, the original creation date, tags' links or a lock. Restore by
+hand in Notes (copy the text back, or move the copy). A locked note is never copied.
+
+| Setting | Default | |
+|---|---|---|
+| `write_backup_folder` | `FunHoard Backups` | one folder name, no `/` or commas |
+| `write_backup_required` | `true` | clients may not send `backup: "none"` on an update |
+| `write_backup_export` | `false` | export the backup folders like any others |
+
+### Deleting a note
+
+`DELETE /api/notes/{id}?base=<modified>[&backup=folder|none][&force=true][&export=false]`
+(scope `write`) → `{note_id, deleted: true, recently_deleted: true, backup_note_id, run}`.
+
+It is Notes' own delete: the note goes to the account's **Recently Deleted** folder, where Notes
+keeps it about 30 days (iCloud and On My Mac; notes of other accounts follow that account's
+rules). `base` (or `base_modified`) is required unless `force`; the conflict checks are the
+update's (**409** `export` / `notes`), and locked or already deleted notes are refused (409).
+`backup` defaults to `none` here (Recently Deleted is the copy); `folder` makes the same backup
+first. The folder is then exported, so the manifest lists the note under `deleted`.
+
+### The mass-change limit
+
+A hard cap on the changes clients make — updates, new notes and deletes; not the service's own
+backups, and not writes an approver approves:
+
+| Setting | Default | |
+|---|---|---|
+| `write_max_changes_per_hour` | 50 | 0 = no limit |
+| `write_max_changes_per_day` | 200 | 0 = no limit |
+
+Beyond it: **429** `{detail, reason: "write_limit", retry_after, window: "hour"|"day", max, count}`
+with a `Retry-After` header. The counts are kept in `write_state.json` in the state directory,
+so a restart doesn't reset them; `/api/status` shows them (`writes.limits`).
+
+### The approval list
+
+A firewall in front of Notes for every client (FunHoard, the MCP server, scripts): a write
+that trips one of these rules is **held** (202, above) instead of made. 0 turns a rule off.
+
+| Setting | Default | Holds a write when |
+|---|---|---|
+| `write_hold_batch_over` / `write_hold_batch_seconds` | 3 / 60 | one client has already asked for more than 3 writes in the last 60 s (made or held) |
+| `write_hold_count_over` / `write_hold_window_hours` | 5 / 24 | more than 5 changes were made in the last 24 h (by anyone) |
+| `write_hold_change_percent` / `write_hold_min_lines` | 50 / 2 | more than 50 % of the note's words change, for a note longer than 2 lines; a delete counts as 100 % |
+| `write_hold_max_age_days` | 0 | held writes older than this are dropped (0 = kept until decided) |
+
+The change is measured on words (difflib) between the note's text in the export now (its
+Markdown, else plain text, else the HTML's words) and the requested Markdown; when the export
+has no text for the note the size rule can't apply and only the other two do. A new note is
+held only by the first two.
+
+Held writes are kept in `approvals/<id>.json` in the state directory (0600; it holds the
+note's text before and after, as the export folder does), so they survive a restart. At most
+1000 wait; beyond that a write is **429** `reason: "approvals_full"`.
+
+* `GET /api/approvals` → `{approvals: [{id, kind (update|create|delete), status (pending|stale),
+  note_id, account, folder_path, title, base, reason (batch|count|big_change), rule {reason,
+  detail, …}, change_percent, created_at, stale_reason, client {name, label, kind, key_id?},
+  before_lines, after_lines}], counts {total, pending, stale, update, create, delete}, can_approve}`.
+  Scope `approve`: every held write. A `write` key (or user) without it: only its own.
+* `GET /api/approvals/{id}` → the same plus `before`, `after`, `diff` (unified) and `request`
+  (the write's options).
+* `POST /api/approvals/{id}/approve` (scope `approve`) makes the write **the normal way**: the
+  backup first, and the conflict checks against the `base` it was asked on (never forced) — so
+  a note changed meanwhile isn't overwritten: **409** `reason: "export"|"notes"|…, stale: true`,
+  and the item stays listed with `status: "stale"`. The hold rules and the mass-change limit
+  don't apply to an approved write. Answers what the write answers, plus `approval_id`,
+  `approved: true`, `kind`; the folder is exported as the write asked.
+* `POST /api/approvals/{id}/reject` drops it (the client keeps its own copy) → `{approval_id, rejected: true}`.
+* `POST /api/approvals/bulk {action: "approve"|"reject", ids: [...] | all: true}` → `{results:
+  [{approval_id, ok, …}], approved, rejected, failed, run}`. `all` approves every **pending**
+  item (rejects every item); approved writes are exported in **one** run afterwards.
+
+The service's web page has an **Approvals** tab (for the `approve` scope) with each held
+write's before / after and difference, and Approve / Reject, Approve selected, Approve all.
+Approving one at a time starts that folder's export, and writes wait while an export runs, so
+for several use Approve selected.
+
+### Write refusals
+
+| Status | `reason` | When |
+|---|---|---|
+| 202 | (`held: true`, `reason` batch / count / big_change) | held for approval — not an error, nothing changed |
+| 400 | `bad_request` | a delete without `base`, a bad `backup`, a new note without text or folder |
+| 403 | `off` | writing is off (`allow_writes`) |
+| 403 | `backup_required` | `backup: "none"` while `write_backup_required` |
+| 404 | `not_found` | no such note (or folder) in the export |
+| 409 | `running`, `busy` | an export or another write is running |
+| 409 | `export`, `notes` | the note changed since `base` |
+| 409 | `losses`, `locked`, `deleted` | see above |
+| 429 | `write_limit` | the mass-change limit (`retry_after`) |
+| 429 | `approvals_full` | 1000 writes are already waiting |
+| 502 | `backup_failed` | the backup couldn't be made, so the note wasn't changed |
+| 503 / 504 / 501 | `permission` / `timeout` / `platform` | Notes refused automation / didn't answer / not macOS |
+
+## Sign-in links for the web page
+
+So a client (FunHoard's "Approve in notes-exporter" button, say) can open the service's own
+web page already signed in:
+
+`POST /api/auth/login-link {next?}` with a key (or session) holding `admin` or `approve` →
+`{url, expires_at, next, ttl_seconds}`. `url` is `http(s)://<the address the client used>/login-link#<token>`:
+a random single-use token in the URL's **fragment**, which browsers never send to a server, so it
+reaches no access log or proxy; the service keeps only its digest (`auth.sqlite`, table
+`login_links`). It works once, for `login_link_ttl_seconds` (setting, default 60, 10–600).
+`next` is a path on the service (default `/`; `/approvals` opens the Approvals tab); anything
+else — another site, `//host`, a relative path — is **400**.
+
+Opening it loads `/login-link`, whose script (`web/link.js`) removes the token from the address
+bar, sends it to `POST /api/auth/login-link/exchange {token}` and keeps the session that comes
+back the way a password sign-in does (in that tab's `sessionStorage`), then goes to `next`. The
+session is the key owner's, **limited to the key's scopes** (a signed claim in the token, so
+an `approve` key's link can approve but not change settings). A used, unknown or expired token
+is **401** `reason: "link_invalid"`, and failed exchanges count towards the sign-in limit per
+address (429). Neither the token nor the link is logged.
 
 ## Updates
 
@@ -667,7 +840,9 @@ are tombstones.
 Exports never write to Apple Notes: the service never passes `--sync` or
 `--sync-only`, and blocks the sync variables from the exporter's environment. The only
 writes are [Writing notes](#writing-notes), off until the admin allows them; their tests
-use `tests/service/fake_writer.py` and fake `osascript` / `pandoc`, never Notes.
+(backups, deletes, the limits and the approval list among them) use `tests/service/fake_writer.py`
+and fake `osascript` / `pandoc`, never Notes; `notes_write.applescript` is only compiled
+(`osacompile`, which reads Notes' scripting dictionary and sends it nothing).
 Its tests never touch real Notes or the real export folder: the exporter is
 `tests/service/fake_exporter.py`, or the real `exportnotes.zsh` with
 `tests/fake_osascript.py` first on its `PATH`, every test in its own temporary

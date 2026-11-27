@@ -1,5 +1,6 @@
 # Releases <!-- omit from toc -->
 
+- [Unreleased - 1.7.0 - Safer writing: backups, delete, limits \& approvals](#unreleased---170---safer-writing-backups-delete-limits--approvals)
 - [Unreleased - 1.6.1 - Export folder on another drive](#unreleased---161---export-folder-on-another-drive)
 - [14 November 2026 - Release 1.6.0 - Updates from a Client](#14-november-2026---release-160---updates-from-a-client)
 - [14 November 2026 - Release 1.5.1 - Settings for Clients \& Writing Notes](#14-november-2026---release-151---settings-for-clients--writing-notes)
@@ -12,6 +13,20 @@
 - [6 June 2025 - Release 0.3 - Automated Scheduling \& Output Improvements](#6-june-2025---release-03---automated-scheduling--output-improvements)
 - [10 June 2024 - Release 0.2 - Filename format / other file types](#10-june-2024---release-02---filename-format--other-file-types)
 - [8 December 2023 - Release 0.1 - Initial Release](#8-december-2023---release-01---initial-release)
+
+## Unreleased - 1.7.0 - Safer writing: backups, delete, limits & approvals
+
+### Upgrading from 1.6.x <!-- omit from toc -->
+
+Restart the service to load the new endpoints. With writing already allowed, **from now on an update first copies the note into `FunHoard Backups` in Notes**, and writes that look like a mass change wait on the new approval list (by default: more than 3 from one client within a minute, more than 5 changes in 24 hours, or a change to more than half of a note longer than two lines). Loosen or turn off any rule on the Settings page (0 = off). A client that treats every 2xx as done should check `held` — `features` in `/api/health` / `/api/version` lists `approvals`.
+
+* **A backup before every change**: `PUT /api/notes/{id}` copies the note as it is (its text, formatting and pictures) into `write_backup_folder` (default `FunHoard Backups`) of its account, beneath it the note's folder path, titled "… (before 2026-11-27 14:05)", and answers `backup_note_id`. If the copy fails, the note isn't changed (502 `backup_failed`). `backup: "none"` skips it only while the admin's `write_backup_required` is off. Backup folders stay out of exports unless `write_backup_export`. See [Backups before a change](SERVICE-API.md#backups-before-a-change).
+* **Deleting a note**: `DELETE /api/notes/{id}?base=<modified>` moves it to Notes' Recently Deleted (recoverable for about 30 days), after the same conflict checks as an update; locked notes refused; `backup=folder` copies it first. The folder is then exported.
+* **A mass-change limit**: at most `write_max_changes_per_hour` (50) and `write_max_changes_per_day` (200) changes; beyond, 429 `{reason: "write_limit", retry_after}` with `Retry-After`. Counted in `write_state.json`, so a restart doesn't reset them; `/api/status` `writes.limits` shows them.
+* **The approval list**: writes tripping the admin's `write_hold_*` rules are held — **202** `{held: true, approval_id, reason}` — with the note's text before and the requested Markdown after, until someone with the new **`approve` scope** (implied by admin) approves or rejects them: `GET /api/approvals`, `GET /api/approvals/{id}` (with a diff), `POST /api/approvals/{id}/approve|reject`, `POST /api/approvals/bulk {ids | all, action}`. Approving makes the write the normal way (backup first; if the note changed meanwhile it isn't overwritten and the item is marked stale). A `write` key sees only its own held writes. The web page has an **Approvals** tab with before / after and Approve / Reject / Approve selected / Approve all, and the write-protection settings on the Settings tab. See [The approval list](SERVICE-API.md#the-approval-list).
+* **One-off sign-in links**: `POST /api/auth/login-link {next}` (admin or approve) → `{url, expires_at}`, a link that opens the web page signed in — single use, `login_link_ttl_seconds` (60), the token in the URL's fragment so it is never in a log, only its digest stored, the session limited to the key's scopes. See [Sign-in links](SERVICE-API.md#sign-in-links-for-the-web-page).
+* **`features`** in `GET /api/health` and `GET /api/version`: `write`, `write_backup`, `delete`, `write_limit`, `approvals`, `login_link`.
+* `writes.ndjson` also records backups, deletes, held writes and who approved or rejected them (never a note's text).
 
 ## Unreleased - 1.6.1 - Export folder on another drive
 
