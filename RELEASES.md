@@ -1,6 +1,6 @@
 # Releases <!-- omit from toc -->
 
-- [Unreleased - 1.7.0 - AI Assistants (MCP)](#unreleased---170---ai-assistants-mcp)
+- [27 November 2026 - Release 1.7.0 - AI Assistants \& Safer Writing](#27-november-2026---release-170---ai-assistants--safer-writing)
 - [14 November 2026 - Release 1.6.0 - Updates from a Client](#14-november-2026---release-160---updates-from-a-client)
 - [14 November 2026 - Release 1.5.1 - Settings for Clients \& Writing Notes](#14-november-2026---release-151---settings-for-clients--writing-notes)
 - [11 November 2026 - Release 1.5.0 - Service API \& EPUB](#11-november-2026---release-150---service-api--epub)
@@ -13,12 +13,27 @@
 - [10 June 2024 - Release 0.2 - Filename format / other file types](#10-june-2024---release-02---filename-format--other-file-types)
 - [8 December 2023 - Release 0.1 - Initial Release](#8-december-2023---release-01---initial-release)
 
-## Unreleased - 1.7.0 - AI Assistants (MCP)
+## 27 November 2026 - Release 1.7.0 - AI Assistants & Safer Writing
 
-### Upgrading from 1.6.0 <!-- omit from toc -->
+### Upgrading from 1.6.x <!-- omit from toc -->
 
 Restart the service (or let a client update and restart it) to load the new endpoints and the web page's new tabs. Then connect an assistant with `./setup_mcp.zsh` or the web page's **MCP** tab ([MCP.md](MCP.md)). Nothing new is installed: the MCP server uses only Python's standard library.
 
+If clients may already write notes, **from now on an update first copies the note into `Notes Exporter Backups` in Notes**, and writes that look like a mass change wait on the new approval list (by default: more than 3 from one client within a minute, more than 5 changes in 24 hours, or a change to more than half of a note longer than two lines). Loosen or turn off any rule on the Settings page (0 = off). A client that treats every 2xx as done should check `held` — `features` in `/api/health` / `/api/version` lists `approvals`.
+
+### Safer writing <!-- omit from toc -->
+
+* **A backup before every change**: `PUT /api/notes/{id}` copies the note as it is (its text, formatting and pictures) into `write_backup_folder` (default `Notes Exporter Backups`) of its account, beneath it the note's folder path, titled "… (before 2026-11-27 14:05)", and answers `backup_note_id`. If the copy fails, the note isn't changed (502 `backup_failed`). `backup: "none"` skips it only while the admin's `write_backup_required` is off. Backup folders stay out of exports unless `write_backup_export`. See [Backups before a change](SERVICE-API.md#backups-before-a-change).
+* **Deleting a note**: `DELETE /api/notes/{id}?base=<modified>` moves it to Notes' Recently Deleted (recoverable for about 30 days), after the same conflict checks as an update; locked notes refused; `backup=folder` copies it first. The folder is then exported.
+* **A mass-change limit**: at most `write_max_changes_per_hour` (50) and `write_max_changes_per_day` (200) changes; beyond, 429 `{reason: "write_limit", retry_after}` with `Retry-After`. Counted in `write_state.json`, so a restart doesn't reset them; `/api/status` `writes.limits` shows them.
+* **The approval list**: writes tripping the admin's `write_hold_*` rules are held — **202** `{held: true, approval_id, reason}` — with the note's text before and the requested Markdown after, until someone with the new **`approve` scope** (implied by admin) approves or rejects them: `GET /api/approvals`, `GET /api/approvals/{id}` (with a diff), `POST /api/approvals/{id}/approve|reject`, `POST /api/approvals/bulk {ids | all, action}`. Approving makes the write the normal way (backup first; if the note changed meanwhile it isn't overwritten and the item is marked stale). A `write` key sees only its own held writes. The web page has an **Approvals** tab with before / after and Approve / Reject / Approve selected / Approve all, and the write-protection settings on the Settings tab. See [The approval list](SERVICE-API.md#the-approval-list).
+* **One-off sign-in links**: `POST /api/auth/login-link {next}` (admin or approve) → `{url, expires_at}`, a link that opens the web page signed in — single use, `login_link_ttl_seconds` (60), the token in the URL's fragment so it is never in a log, only its digest stored, the session limited to the key's scopes. See [Sign-in links](SERVICE-API.md#sign-in-links-for-the-web-page).
+* **`features`** in `GET /api/health` and `GET /api/version`: `write`, `write_backup`, `delete`, `write_limit`, `approvals`, `login_link`.
+* `writes.ndjson` also records backups, deletes, held writes and who approved or rejected them (never a note's text).
+
+### AI assistants (MCP) and more <!-- omit from toc -->
+
+* **The MCP server knows about safer writing**: `update_note` reports the backup copy, a held change comes back as `held: true` with its approval id, `delete_note` moves a note to Recently Deleted, `list_held_writes` lists what waits, and a key with the `approve` scope adds `approve_held_write` / `reject_held_write`. See [MCP.md](MCP.md#letting-it-change-notes).
 * **An MCP server for AI assistants**: `notes-exporter mcp serve` lets Claude Code, Claude Desktop or any MCP client (stdio) search and read the exported notes (`search_notes` over titles, folders, tags and text; `list_notes`, `list_folders`, `read_note`, `get_attachment` for pictures), see and start exports (`notes_status`, `list_runs`, `get_run`, `start_export`, `cancel_export`), and — only with the `write` scope and while the admin allows writes — change and create notes (`update_note`, `create_note`). It is a client of the service with an API key of its own, so the scopes, the write fences and the conflict checks apply unchanged; the tools a client sees follow the key's scopes, and `--read-only` offers only the reading ones. Standard library only. See [MCP.md](MCP.md).
 * **Setting it up from the command line**: `./setup_mcp.zsh` (or `notes-exporter mcp setup`) makes a key named `MCP` (read, run; `--write`, `--no-run`), writes it into `~/Library/Application Support/notes-exporter/mcp.env` (mode 0600, never printed, never in a client's config), registers the server with Claude Code (`claude mcp add --scope user`) and Claude Desktop (its config backed up first), or prints the entry for another client, and checks it. Running it again rotates the key. `--url … --key-stdin` for a service on another Mac. `notes-exporter mcp check`, `notes-exporter mcp uninstall`.
 * **…or from the web page**: a new **MCP** tab (admins) makes the key — kept in the key file on this Mac, or shown once for a client on another computer — and shows the `claude mcp add` line and the JSON to paste, with Copy buttons, and which key the file holds. `GET` / `POST /api/admin/mcp` ([SERVICE-API.md](SERVICE-API.md#mcp)).

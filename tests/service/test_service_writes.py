@@ -46,8 +46,12 @@ def calls(writer):
     return json.loads(writer.read_text()).get("calls", []) if writer.exists() else []
 
 
-def allow(ctx):
-    ctx.settings.update({"allow_writes": True})
+HOLD_RULES_OFF = {"write_hold_batch_over": 0, "write_hold_count_over": 0, "write_hold_change_percent": 0}
+
+
+def allow(ctx, holds=False):
+    """Writing on; the approval list's rules off unless ``holds`` (test_service_approvals.py tests them)."""
+    ctx.settings.update({"allow_writes": True, **({} if holds else HOLD_RULES_OFF)})
 
 
 def body(**kw):
@@ -60,8 +64,11 @@ def test_writes_are_off_until_allowed(svc, writer):
     r = client.put(URL, json=body())
     assert r.status_code == 403 and r.json()["reason"] == "off"
     assert calls(writer) == []
-    assert client.get("/api/writes").json() == {"allowed": False, "busy": False, "running_run_id": None,
-                                                "can_write": True}
+    state = client.get("/api/writes").json()
+    assert {k: state[k] for k in ("allowed", "busy", "running_run_id", "can_write")} == {
+        "allowed": False, "busy": False, "running_run_id": None, "can_write": True}
+    assert state["backup"] == {"folder": "Notes Exporter Backups", "required": True, "exported": False}
+    assert state["limits"]["max_per_hour"] == 50 and state["limits"]["changes_last_hour"] == 0
 
 
 def test_write_needs_the_write_scope(svc, writer):
@@ -89,8 +96,9 @@ def test_update_checks_notes_then_writes_and_logs_no_text(svc, writer, make_conf
     assert r.status_code == 200, r.text
     assert r.json()["modified"] == "2026-02-01T09:00:00+00:00" and r.json()["run"] is None
     ops = [c["operation"] for c in calls(writer)]
-    assert ops == ["modified", "update"]
-    update = calls(writer)[1]
+    assert ops == ["modified", "backup", "update"]
+    assert r.json()["backup_note_id"] == "x-coredata://TEST/ICNote/backup1"
+    update = calls(writer)[2]
     assert update["note_id"] == NOTE and update["markdown_chars"] > 0
     assert update["base_dir"].endswith("md/iCloud-Baking") and update["root"]
     log = (ctx.config.home / "writes.ndjson").read_text()

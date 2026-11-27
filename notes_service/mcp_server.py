@@ -52,10 +52,12 @@ Apple Notes, as exported by notes-exporter on the user's Mac.
   `list_folders`, then `read_note` for the text.
 - The export is a copy made by the last export run: `notes_status` says when that was;
   `start_export` refreshes it (incremental by default, it takes a little while).
-- Writing (`update_note`, `create_note`) changes the user's real Apple Notes. Only do it when
-  the user asked for that change. `update_note` replaces the whole note: read it first and
-  pass the `modified` you read as `base_modified`. When the service reports a conflict or
-  losses, tell the user instead of forcing it.
+- Writing (`update_note`, `create_note`, `delete_note`) changes the user's real Apple Notes.
+  Only do it when the user asked for that change. `update_note` replaces the whole note: read
+  it first and pass the `modified` you read as `base_modified`. When the service reports a
+  conflict, losses or a limit, tell the user instead of forcing it. A write answered
+  `held: true` is waiting on the service's approval list: nothing has changed yet, don't send
+  it again. Never approve your own held writes unless the user explicitly says so.
 """
 
 
@@ -692,14 +694,44 @@ def _write_refused(e: ApiError) -> ToolError:
         "losses": "Rewriting this note would lose things Notes can't get back from Markdown (listed below). "
                   "Tell the user; only with their agreement send accept_losses: true.",
         "permission": "The service isn't allowed to control Notes (System Settings → Privacy & Security → Automation).",
+        "locked": "The note is locked in Notes; it can't be changed or deleted by a script.",
+        "deleted": "The note was already deleted in Notes.",
+        "backup_failed": "The service couldn't copy the note into its backup folder first, so it didn't change it. "
+                         "Tell the user; don't retry without backup unless they say so.",
+        "backup_required": "The admin requires a backup before every change: leave backup at its default.",
+        "write_limit": "Too many changes to Notes for now (the admin's limit against mass changes). Stop and tell "
+                       "the user; it opens again in retry_after seconds.",
+        "approvals_full": "The approval list is full; the user must approve or reject held writes first.",
     }
     return ToolError(words.get(reason, _explain(e)), body)
 
 
+def _held(r: dict) -> Optional[dict]:
+    """A 202: the service held the write on its approval list — nothing changed yet."""
+    if not (isinstance(r, dict) and r.get("held")):
+        return None
+    return {"written": False, "held": True, "approval_id": r.get("approval_id"), "reason": r.get("reason"),
+            "detail": r.get("detail"),
+            "message": "Held for approval: nothing has changed in Apple Notes yet. Tell the user it is waiting "
+                       "on the notes-exporter approval list (the service's web page, Approvals tab). Don't "
+                       "send it again."}
+
+
+def _write(s: "NotesMcp", method: str, path: str, **kw) -> dict:
+    try:
+        return s.api.json(method, path, timeout=300, **kw)
+    except ApiError as e:
+        if e.status in (403, 409, 429, 502, 503):
+            raise _write_refused(e)
+        raise
+
+
 @tool("update_note", "write",
-      "Replace a note's whole content in Apple Notes with Markdown. Read it first (read_note, format markdown) "
-      "and pass its `modified` as base_modified. Pictures linked inside the export stay; other attachments and "
-      "checklist ticks would be lost, which the service reports first. Then the folder is exported again.",
+      "Replace a note's whole content in Apple Notes with Markdown (a new title renames it). Read it first "
+      "(read_note, format markdown) and pass its `modified` as base_modified. The service first copies the "
+      "note as it is into its backup folder in Notes. Pictures linked inside the export stay; other attachments "
+      "and checklist ticks would be lost, which the service reports first. A big change, or many changes, may "
+      "be held for the user's approval instead (held: true). Then the folder is exported again.",
       {"id": {"type": "string"}, "markdown": {"type": "string"},
        "base_modified": {"type": "string", "description": "the note's `modified` when you read it"},
        "title": {"type": "string", "description": "a new title (default: keep, or the first heading)"},
@@ -714,19 +746,14 @@ def t_update(s: NotesMcp, id, markdown, base_modified, title=None, force=False, 
             "accept_losses": bool(accept_losses)}
     if title:
         body["title"] = title
-    try:
-        r = s.api.json("PUT", note_path(id), body=body, timeout=300)
-    except ApiError as e:
-        if e.status in (403, 409, 503):
-            raise _write_refused(e)
-        raise
-    return {"written": True, "note_id": r.get("note_id"), "modified": r.get("modified"),
-            "export_run": (r.get("run") or {}).get("id")}
+    r = _write(s, "PUT", note_path(id), body=body)
+    return _held(r) or {"written": True, "note_id": r.get("note_id"), "modified": r.get("modified"),
+                        "backup_note_id": r.get("backup_note_id"), "export_run": (r.get("run") or {}).get("id")}
 
 
 @tool("create_note", "write",
       "Make a new note in Apple Notes from Markdown, in a folder the export already holds notes in. "
-      "Then that folder is exported again.",
+      "It may be held for the user's approval instead (held: true). Then that folder is exported again.",
       {"account": {"type": "string", "description": "account name, e.g. iCloud"},
        "folder": {"type": "string", "description": "folder path, '/' between levels"},
        "markdown": {"type": "string"},
@@ -743,11 +770,59 @@ def t_create(s: NotesMcp, account, folder, markdown, title=None):
     except ApiError as e:
         if e.status == 404:
             raise ToolError(f"No folder {folder!r} with notes in account {account!r} in the export (see list_folders).")
-        if e.status in (403, 409, 503):
+        if e.status in (403, 409, 429, 503):
             raise _write_refused(e)
         raise
-    return {"created": True, "note_id": r.get("note_id"), "modified": r.get("modified"),
-            "export_run": (r.get("run") or {}).get("id")}
+    return _held(r) or {"created": True, "note_id": r.get("note_id"), "modified": r.get("modified"),
+                        "export_run": (r.get("run") or {}).get("id")}
+
+
+@tool("delete_note", "write",
+      "Delete a note in Apple Notes: Notes moves it to Recently Deleted, where it can be recovered for about "
+      "30 days. Only when the user asked for that note to be deleted. Read it first and pass its `modified` as "
+      "base_modified. It may be held for the user's approval instead (held: true).",
+      {"id": {"type": "string"},
+       "base_modified": {"type": "string", "description": "the note's `modified` when you read it"},
+       "backup": {"type": "boolean", "default": False,
+                  "description": "also copy it into the service's backup folder first"}},
+      required=["id", "base_modified"], read_only=False, destructive=True, idempotent=False,
+      title="Delete a note")
+def t_delete(s: NotesMcp, id, base_modified, backup=False):
+    params = {"base": base_modified, "backup": "folder" if backup else "none"}
+    r = _write(s, "DELETE", note_path(id), params=params)
+    return _held(r) or {"deleted": True, "recently_deleted": True, "note_id": r.get("note_id"),
+                        "backup_note_id": r.get("backup_note_id"), "export_run": (r.get("run") or {}).get("id")}
+
+
+@tool("list_held_writes", "write",
+      "Writes held on the service's approval list, waiting for the user (with a write key: only yours). "
+      "Each has an id, what it would do, to which note, why it was held, and whether it is stale.",
+      read_only=True, title="Held writes")
+def t_held(s: NotesMcp):
+    r = s.api.json("GET", "/api/approvals")
+    return {"counts": r.get("counts"), "held": r.get("approvals", [])}
+
+
+@tool("approve_held_write", "approve",
+      "Make a held write in Apple Notes (backup first; refused if the note changed since). ONLY when the user, "
+      "having seen the change, explicitly said to approve this one. Never approve your own writes on your own.",
+      {"approval_id": {"type": "string"}}, required=["approval_id"], read_only=False, destructive=True,
+      idempotent=False, title="Approve a held write")
+def t_approve(s: NotesMcp, approval_id):
+    try:
+        return s.api.json("POST", f"/api/approvals/{urllib.parse.quote(approval_id, safe='')}/approve", timeout=300)
+    except ApiError as e:
+        if e.status in (403, 409, 429, 502, 503):
+            raise _write_refused(e)
+        raise
+
+
+@tool("reject_held_write", "approve",
+      "Drop a held write without changing Notes, when the user said so.",
+      {"approval_id": {"type": "string"}}, required=["approval_id"], read_only=False, destructive=False,
+      idempotent=True, title="Reject a held write")
+def t_reject(s: NotesMcp, approval_id):
+    return s.api.json("POST", f"/api/approvals/{urllib.parse.quote(approval_id, safe='')}/reject")
 
 
 # ---------------------------------------------------------------- running it

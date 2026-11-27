@@ -39,6 +39,7 @@
   <div id="app" hidden>
     <nav>
       <button data-tab="status" class="tab active">Status</button>
+      <button data-tab="approvals" class="tab approve-only">Approvals <span id="approvals-count"></span></button>
       <button data-tab="settings" class="tab admin-only">Settings</button>
       <button data-tab="users" class="tab admin-only">Users</button>
       <button data-tab="keys" class="tab admin-only">API keys</button>
@@ -77,6 +78,31 @@
       </div>
     </section>
 
+    <section id="tab-approvals" class="panel" hidden>
+      <div class="card">
+        <h3>Writes held for approval</h3>
+        <p class="muted">Clients' changes to Apple Notes that tripped one of the protection rules. Approving one makes it the usual way (a backup first, and only if the note hasn't changed since); rejecting drops it.</p>
+        <div class="row">
+          <button id="approve-selected">Approve selected</button>
+          <button id="reject-selected">Reject selected</button>
+          <button id="approve-all">Approve all</button>
+          <span id="approvals-note"></span>
+        </div>
+        <p class="error" id="approvals-error"></p>
+        <table id="approvals"><thead><tr><th><input type="checkbox" id="approvals-all"></th><th>Asked</th><th>What</th><th>Note</th><th>Client</th><th>Why held</th><th>Status</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="card" id="approval-detail" hidden>
+        <h3 id="approval-title"></h3>
+        <div class="row"><button id="approval-approve">Approve</button><button id="approval-reject">Reject</button></div>
+        <div class="split">
+          <div><h4>Now</h4><pre id="approval-before"></pre></div>
+          <div><h4>Requested</h4><pre id="approval-after"></pre></div>
+        </div>
+        <h4>Difference</h4>
+        <pre id="approval-diff"></pre>
+      </div>
+    </section>
+
     <section id="tab-settings" class="panel" hidden>
       <form id="settings-form" class="card">
         <label>Export folder <input name="export_root" required></label>
@@ -95,6 +121,21 @@
         <label class="check"><input type="checkbox" name="tags"> Read #tags from the Notes database (needs Full Disk Access)</label>
         <label class="check"><input type="checkbox" name="tags_in_content"> Write a Tags line into notes</label>
         <label class="check"><input type="checkbox" name="allow_writes"> Allow clients to write notes (change and create notes in Apple Notes — keys with the write scope, such as FunHoard's editor)</label>
+        <fieldset id="write-fences"><legend>Protecting Notes from clients' writes</legend>
+          <label>Back up a note before changing it, into the folder <input name="write_backup_folder"></label>
+          <label class="check"><input type="checkbox" name="write_backup_required"> Clients may not skip the backup</label>
+          <label class="check"><input type="checkbox" name="write_backup_export"> Export the backup folder too</label>
+          <label>At most changes an hour (0 = no limit) <input name="write_max_changes_per_hour" type="number" min="0"></label>
+          <label>At most changes a day (0 = no limit) <input name="write_max_changes_per_day" type="number" min="0"></label>
+          <p class="muted">Hold for approval (0 turns a rule off):</p>
+          <label>More than this many writes from one client <input name="write_hold_batch_over" type="number" min="0"></label>
+          <label>… within seconds <input name="write_hold_batch_seconds" type="number" min="1"></label>
+          <label>More than this many changes <input name="write_hold_count_over" type="number" min="0"></label>
+          <label>… within hours <input name="write_hold_window_hours" type="number" min="1"></label>
+          <label>A change of more than this % of a note <input name="write_hold_change_percent" type="number" min="0" max="100"></label>
+          <label>… longer than this many lines <input name="write_hold_min_lines" type="number" min="0"></label>
+          <label>Drop held writes after days (0 = keep) <input name="write_hold_max_age_days" type="number" min="0"></label>
+        </fieldset>
         <label>Convert images to <select name="image_format"><option value="">(keep)</option><option>jpeg</option><option>png</option><option>heic</option><option>tiff</option><option>webp</option></select></label>
         <fieldset><legend>Schedule</legend>
           <label class="check"><input type="checkbox" name="schedule_enabled"> Export automatically</label>
@@ -137,6 +178,7 @@
           <label class="check"><input type="checkbox" name="scope" value="run"> run</label>
           <label class="check"><input type="checkbox" name="scope" value="settings"> settings</label>
           <label class="check"><input type="checkbox" name="scope" value="write"> write (change notes in Apple Notes)</label>
+          <label class="check"><input type="checkbox" name="scope" value="approve"> approve (approve or reject held writes)</label>
           <label class="check"><input type="checkbox" name="scope" value="admin"> admin</label>
         </fieldset>
         <label>Expires (optional) <input name="expires_at" type="date"></label>

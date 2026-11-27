@@ -45,7 +45,8 @@ def _fake(tmp_path, name, body):
 def _run(tmp_path, req, osascript_out, env_extra=None):
     env = dict(os.environ,
                NOTES_WRITE_OSASCRIPT=_fake(tmp_path, "osascript", f"cat > /dev/null; printf '{osascript_out}'\n"),
-               NOTES_WRITE_PANDOC=_fake(tmp_path, "pandoc", "cat\n"), **(env_extra or {}))
+               NOTES_WRITE_PANDOC=_fake(tmp_path, "pandoc", "cat\n"))
+    env.update(env_extra or {})
     r = subprocess.run([sys.executable, str(REPO / "notes_write_helper.py")], input=json.dumps(req),
                        capture_output=True, text=True, env=env, timeout=30)
     return json.loads(r.stdout)
@@ -61,6 +62,45 @@ def test_a_refusal_becomes_a_permission_code(tmp_path):
     out = _run(tmp_path, {"operation": "modified", "note_id": "n1"},
                r"error\t-1743\tNot authorized to send Apple events\n")
     assert out == {"ok": False, "error": "Not authorized to send Apple events", "code": "permission"}
+
+
+def _run_recording(tmp_path, req, answer):
+    args_file = tmp_path / "args.txt"
+    env = {"NOTES_WRITE_OSASCRIPT": _fake(tmp_path, "osascript-rec",
+                                          f'for a in "$@"; do printf "%s\\n" "$a" >> "{args_file}"; done\n'
+                                          f"printf '{answer}'\n")}
+    out = _run(tmp_path, req, answer, env_extra=env)
+    return out, args_file.read_text().splitlines()
+
+
+def test_a_backup_names_the_account_folder_path_and_suffix(tmp_path):
+    out, args = _run_recording(tmp_path, {"operation": "backup", "note_id": "n1", "account": "iCloud",
+                                          "backup_folder": "Notes Exporter Backups", "folder_path": ["Food", "Baking"],
+                                          "suffix": " (before 2026-11-27 14:05)"},
+                               r"ok\tb1\t2026-11-27T14:05:00\n")
+    assert out["ok"] and out["note_id"] == "b1"
+    assert args[1:] == ["backup", "n1", "iCloud", "Notes Exporter Backups", " (before 2026-11-27 14:05)", "Food", "Baking"]
+
+
+def test_a_backup_needs_an_account_and_a_folder(tmp_path):
+    out = _run(tmp_path, {"operation": "backup", "note_id": "n1", "account": "", "backup_folder": "B"}, "")
+    assert out["ok"] is False and out["code"] == "bad_request"
+
+
+def test_delete_and_a_locked_note(tmp_path):
+    out, args = _run_recording(tmp_path, {"operation": "delete", "note_id": "n1"}, r"ok\tn1\t2026-11-27T14:05:00\n")
+    assert out["ok"] and args[1:] == ["delete", "n1"]
+    out = _run(tmp_path, {"operation": "delete", "note_id": "n1"}, r"error\t-10050\tthe note is locked\n")
+    assert out == {"ok": False, "error": "the note is locked", "code": "locked"}
+
+
+def test_the_write_script_compiles(tmp_path):
+    import shutil
+    if sys.platform != "darwin" or not shutil.which("osacompile"):
+        pytest.skip("needs macOS")
+    # osacompile reads Notes' scripting dictionary only; nothing is sent to Notes.
+    subprocess.run(["osacompile", "-o", str(tmp_path / "w.scpt"), str(REPO / "notes_write.applescript")],
+                   check=True, capture_output=True)
 
 
 def test_a_new_note_needs_a_folder(tmp_path):

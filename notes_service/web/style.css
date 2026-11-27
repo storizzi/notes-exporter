@@ -44,3 +44,6 @@ code { overflow-wrap: anywhere; }
 .status-ok { color: var(--ok); } .status-failed, .status-cancelled { color: var(--err); }
 .status-running, .status-partial { color: var(--accent); }
 pre.snippet { font-size: 12px; background: var(--bg); padding: 8px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 640px) { .split { grid-template-columns: 1fr; } }
+#tab-approvals pre { max-height: 360px; overflow: auto; font-size: 12px; background: var(--bg); padding: 8px; border-radius: 6px; white-space: pre-wrap; }

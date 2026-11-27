@@ -147,6 +147,9 @@ Which tools the client sees follows the key's scopes (and `--read-only`).
 | `start_export`, `cancel_export` | run | an incremental or full run, optionally some folders / accounts / extra formats |
 | `update_note` | write | replace a note's content with Markdown |
 | `create_note` | write | a new note in a folder the export already holds |
+| `delete_note` | write | move a note to Notes' Recently Deleted (recoverable for about 30 days) |
+| `list_held_writes` | write | changes waiting on the approval list (a write key sees only its own) |
+| `approve_held_write`, `reject_held_write` | approve | make or drop a held change, only when the user says so |
 
 Full-text search reads each note's exported text through the service (and remembers it while
 the server runs, by its SHA-256), so the first search over a large export takes a few seconds.
@@ -168,6 +171,15 @@ checklist ticks is refused until the user agrees, and nothing is written during 
 The server tells the assistant to change notes only when you ask, and to report conflicts
 and losses to you rather than forcing them. Every write is logged (who, which note, never the
 text) in `writes.ndjson`, under the key `key:<prefix>`.
+
+Each update first copies the note into the backup folder in Notes (`Notes Exporter Backups`
+by default), and `update_note` reports the copy's `backup_note_id`. A change that looks like a
+mass change (see [The approval list](SERVICE-API.md#the-approval-list)) isn't made at once:
+the tool answers `held: true` with the approval's id, and the change waits until the user
+approves it on the web page's **Approvals** tab. `list_held_writes` shows what waits. Only a
+key with the **approve** scope (ticked on the API keys page) offers `approve_held_write` and
+`reject_held_write`, and the assistant is told to use them only when the user has seen the
+change and asked. Over the hourly or daily limit a write is refused with when to try again.
 
 ## Check, rotate, remove
 

@@ -1,4 +1,4 @@
-"""1.6.1: whether the service can really write to the export folder (a probe file, never left behind),
+"""1.7.0: whether the service can really write to the export folder (a probe file, never left behind),
 machine-readable refusal reasons on the settings endpoints, and the last runs' ids in /api/status."""
 
 import errno
